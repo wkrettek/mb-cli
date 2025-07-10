@@ -3,6 +3,10 @@ name = "modbus_client"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "mb"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5.40", features = ["derive"] }
