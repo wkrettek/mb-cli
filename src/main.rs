@@ -28,7 +28,12 @@ struct Common {
 
 /// CLI entry point
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Rust Modbus TCP client (single-shot)")]
+#[command(
+    author, 
+    version, 
+    about = "Rust Modbus TCP client (single-shot)",
+    after_help = "EXAMPLES:\n    mb read holding --ip 127.0.0.1 --port 502 --addr 1\n    mb read coils --ip 192.168.1.100 --addr 0 --qty 8\n    mb read input --ip 10.0.0.50 --addr 30001 --unit 1"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Command,
