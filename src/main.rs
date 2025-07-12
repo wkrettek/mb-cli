@@ -3,6 +3,7 @@ use std::{
     future,
     net::{IpAddr, SocketAddr},
     path::PathBuf,
+    sync::{Arc, Mutex},
 };
 use tokio_modbus::client::{Reader, Writer};
 use tokio_modbus::prelude::*;
@@ -175,8 +176,35 @@ enum WriteArea {
     },
 }
 
+#[derive(Debug)]
+struct ModbusData {
+    coils: Vec<bool>,
+    discrete_inputs: Vec<bool>,
+    holding_registers: Vec<u16>,
+    input_registers: Vec<u16>,
+}
+
+impl ModbusData {
+    fn new(num_coils: u16, num_discrete: u16, num_holding: u16, num_input: u16) -> Self {
+        Self {
+            coils: vec![false; num_coils as usize],
+            discrete_inputs: vec![false; num_discrete as usize],
+            holding_registers: (0..num_holding).collect(),
+            input_registers: (0..num_input).collect(),
+        }
+    }
+}
+
 #[derive(Clone)]
-struct ModbusService;
+struct ModbusService {
+    data: Arc<Mutex<ModbusData>>,
+}
+
+impl ModbusService {
+    fn new(data: Arc<Mutex<ModbusData>>) -> Self {
+        Self { data }
+    }
+}
 
 impl Service for ModbusService {
     type Request = Request<'static>;
@@ -185,42 +213,97 @@ impl Service for ModbusService {
     type Future = future::Ready<Result<Self::Response, Self::Exception>>;
 
     fn call(&self, req: Self::Request) -> Self::Future {
+        let mut data = match self.data.lock() {
+            Ok(data) => data,
+            Err(_) => return future::ready(Err(ExceptionCode::ServerDeviceFailure)),
+        };
+
         let response = match req {
             Request::ReadCoils(addr, qty) => {
-                // Return dummy coils - all OFF for now
-                let coils = vec![false; qty as usize];
-                Response::ReadCoils(coils)
+                let start = addr as usize;
+                let end = start + qty as usize;
+                if end <= data.coils.len() {
+                    let coils = data.coils[start..end].to_vec();
+                    Response::ReadCoils(coils)
+                } else {
+                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                }
             }
             Request::ReadDiscreteInputs(addr, qty) => {
-                // Return dummy discrete inputs - all OFF for now
-                let inputs = vec![false; qty as usize];
-                Response::ReadDiscreteInputs(inputs)
+                let start = addr as usize;
+                let end = start + qty as usize;
+                if end <= data.discrete_inputs.len() {
+                    let inputs = data.discrete_inputs[start..end].to_vec();
+                    Response::ReadDiscreteInputs(inputs)
+                } else {
+                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                }
             }
             Request::ReadHoldingRegisters(addr, qty) => {
-                // Return registers where each address equals its value
-                let registers: Vec<u16> = (addr..addr + qty).collect();
-                Response::ReadHoldingRegisters(registers)
+                let start = addr as usize;
+                let end = start + qty as usize;
+                if end <= data.holding_registers.len() {
+                    let registers = data.holding_registers[start..end].to_vec();
+                    Response::ReadHoldingRegisters(registers)
+                } else {
+                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                }
             }
             Request::ReadInputRegisters(addr, qty) => {
-                // Return registers where each address equals its value
-                let registers: Vec<u16> = (addr..addr + qty).collect();
-                Response::ReadInputRegisters(registers)
+                let start = addr as usize;
+                let end = start + qty as usize;
+                if end <= data.input_registers.len() {
+                    let registers = data.input_registers[start..end].to_vec();
+                    Response::ReadInputRegisters(registers)
+                } else {
+                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                }
             }
             Request::WriteSingleCoil(addr, value) => {
-                println!("Write coil {addr}: {value}");
-                Response::WriteSingleCoil(addr, value)
+                let addr = addr as usize;
+                if addr < data.coils.len() {
+                    println!("Write coil {addr}: {value}");
+                    data.coils[addr] = value;
+                    Response::WriteSingleCoil(addr as u16, value)
+                } else {
+                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                }
             }
             Request::WriteSingleRegister(addr, value) => {
-                println!("Write register {addr}: {value}");
-                Response::WriteSingleRegister(addr, value)
+                let addr = addr as usize;
+                if addr < data.holding_registers.len() {
+                    println!("Write register {addr}: {value}");
+                    data.holding_registers[addr] = value;
+                    Response::WriteSingleRegister(addr as u16, value)
+                } else {
+                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                }
             }
             Request::WriteMultipleCoils(addr, values) => {
-                println!("Write {} coils starting at {addr}", values.len());
-                Response::WriteMultipleCoils(addr, values.len() as u16)
+                let start = addr as usize;
+                let end = start + values.len();
+                if end <= data.coils.len() {
+                    println!("Write {} coils starting at {addr}", values.len());
+                    for (i, &value) in values.iter().enumerate() {
+                        data.coils[start + i] = value;
+                    }
+                    Response::WriteMultipleCoils(addr, values.len() as u16)
+                } else {
+                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                }
             }
             Request::WriteMultipleRegisters(addr, values) => {
-                println!("Write {} registers starting at {addr}", values.len());
-                Response::WriteMultipleRegisters(addr, values.len() as u16)
+                let start = addr as usize;
+                let end = start + values.len();
+                if end <= data.holding_registers.len() {
+                    println!("Write {} registers starting at {addr}", values.len());
+                    for (i, &value) in values.iter().enumerate() {
+                        data.holding_registers[start + i] = value;
+                    }
+                    Response::WriteMultipleRegisters(addr, values.len() as u16)
+                } else {
+                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                }
             }
             _ => {
                 return future::ready(Err(ExceptionCode::IllegalFunction));
@@ -550,7 +633,15 @@ async fn main() -> anyhow::Result<()> {
             println!("Press Ctrl+C to stop the server");
 
             let server = Server::new(listener);
-            let service = ModbusService;
+
+            // Create shared data storage
+            let data = Arc::new(Mutex::new(ModbusData::new(
+                num_coils,
+                num_discrete,
+                num_holding,
+                num_input,
+            )));
+            let service = ModbusService::new(data);
 
             let on_connected = move |stream, socket_addr| {
                 let service = service.clone();
