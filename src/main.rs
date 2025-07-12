@@ -1,10 +1,12 @@
 use clap::{Parser, Subcommand, arg};
 use std::{
+    future,
     net::{IpAddr, SocketAddr},
     path::PathBuf,
 };
 use tokio_modbus::client::{Reader, Writer};
 use tokio_modbus::prelude::*;
+use tokio_modbus::server::{Service, tcp::Server};
 
 /// Flags common to every subcommand
 #[derive(Debug, clap::Args)]
@@ -173,6 +175,61 @@ enum WriteArea {
     },
 }
 
+#[derive(Clone)]
+struct ModbusService;
+
+impl Service for ModbusService {
+    type Request = Request<'static>;
+    type Response = Response;
+    type Exception = ExceptionCode;
+    type Future = future::Ready<Result<Self::Response, Self::Exception>>;
+
+    fn call(&self, req: Self::Request) -> Self::Future {
+        let response = match req {
+            Request::ReadCoils(addr, qty) => {
+                // Return dummy coils - all OFF for now
+                let coils = vec![false; qty as usize];
+                Response::ReadCoils(coils)
+            }
+            Request::ReadDiscreteInputs(addr, qty) => {
+                // Return dummy discrete inputs - all OFF for now
+                let inputs = vec![false; qty as usize];
+                Response::ReadDiscreteInputs(inputs)
+            }
+            Request::ReadHoldingRegisters(addr, qty) => {
+                // Return registers where each address equals its value
+                let registers: Vec<u16> = (addr..addr + qty).collect();
+                Response::ReadHoldingRegisters(registers)
+            }
+            Request::ReadInputRegisters(addr, qty) => {
+                // Return registers where each address equals its value
+                let registers: Vec<u16> = (addr..addr + qty).collect();
+                Response::ReadInputRegisters(registers)
+            }
+            Request::WriteSingleCoil(addr, value) => {
+                println!("Write coil {addr}: {value}");
+                Response::WriteSingleCoil(addr, value)
+            }
+            Request::WriteSingleRegister(addr, value) => {
+                println!("Write register {addr}: {value}");
+                Response::WriteSingleRegister(addr, value)
+            }
+            Request::WriteMultipleCoils(addr, values) => {
+                println!("Write {} coils starting at {addr}", values.len());
+                Response::WriteMultipleCoils(addr, values.len() as u16)
+            }
+            Request::WriteMultipleRegisters(addr, values) => {
+                println!("Write {} registers starting at {addr}", values.len());
+                Response::WriteMultipleRegisters(addr, values.len() as u16)
+            }
+            _ => {
+                return future::ready(Err(ExceptionCode::IllegalFunction));
+            }
+        };
+        future::ready(Ok(response))
+    }
+}
+
 async fn connect_to_modbus(ip: IpAddr, port: u16, unit_id: u8) -> anyhow::Result<client::Context> {
     let socket_addr = SocketAddr::new(ip, port);
     println!("Connecting to Modbus server at {ip}:{port} (Unit ID: {unit_id})...");
@@ -337,7 +394,7 @@ async fn main() -> anyhow::Result<()> {
                     match client.write_single_coil(start, bool_values[0]).await {
                         Ok(response) => match response {
                             Ok(_) => {
-                                println!("Successfully wrote coil at address {}", start);
+                                println!("Successfully wrote coil at address {start}");
                             }
                             Err(exception) => {
                                 eprintln!("Modbus exception response: {exception:?}");
@@ -435,7 +492,7 @@ async fn main() -> anyhow::Result<()> {
                                 );
                                 for (i, value) in values.iter().enumerate() {
                                     let addr = start + i as u16;
-                                    println!("  Address {}: {} (0x{:04X})", addr, value, value);
+                                    println!("  Address {addr}: {value} (0x{value:04X})");
                                 }
                             }
                             Err(exception) => {
@@ -455,16 +512,15 @@ async fn main() -> anyhow::Result<()> {
         Command::Server {
             bind,
             port,
-            unit,
+            unit: _unit,
             num_coils,
             num_discrete,
             num_holding,
             num_input,
-            verbose,
+            verbose: _verbose,
         } => {
-            println!("Starting Modbus server on {}:{}", bind, port);
+            println!("Starting Modbus TCP server on {bind}:{port}");
             println!("Configuration:");
-            println!("  Unit ID: {}", unit);
             println!(
                 "  Coils: {} (addresses 0-{})",
                 num_coils,
@@ -486,15 +542,45 @@ async fn main() -> anyhow::Result<()> {
                 num_input.saturating_sub(1)
             );
             println!("  Initialization: Each address value equals its address");
-            println!("  Verbose logging: {}", verbose);
+            println!();
 
-            // TODO: Implement server
-            println!("\nServer implementation coming soon...");
+            let socket_addr = SocketAddr::new(bind, port);
+            let listener = tokio::net::TcpListener::bind(socket_addr).await?;
+            println!("Modbus TCP server listening on {bind}:{port}");
             println!("Press Ctrl+C to stop the server");
 
-            // Keep the server running until interrupted
-            tokio::signal::ctrl_c().await?;
-            println!("\nShutting down server...");
+            let server = Server::new(listener);
+            let service = ModbusService;
+
+            let on_connected = move |stream, socket_addr| {
+                let service = service.clone();
+                async move {
+                    println!("Client connected: {socket_addr}");
+                    tokio_modbus::server::tcp::accept_tcp_connection(stream, socket_addr, |_| {
+                        Ok(Some(service.clone()))
+                    })
+                }
+            };
+
+            let on_process_error = |err| {
+                eprintln!("Server error: {err}");
+            };
+
+            let ctrl_c = Box::pin(async {
+                tokio::signal::ctrl_c().await.ok();
+            });
+
+            match server
+                .serve_until(&on_connected, on_process_error, ctrl_c)
+                .await?
+            {
+                tokio_modbus::server::Terminated::Finished => {
+                    println!("\nServer finished");
+                }
+                tokio_modbus::server::Terminated::Aborted => {
+                    println!("\nServer stopped");
+                }
+            }
         }
     }
 
