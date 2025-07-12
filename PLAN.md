@@ -1,0 +1,5 @@
+- make switching between tcp and rtu easy
+    - autodetect on --ip or --device
+- I could add probing
+    - Probe the whole space (maybe some selectors for, holding, discrete, coils, input, or just all)
+- Should I do the server?

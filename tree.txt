@@ -1,0 +1,11 @@
+    0 B ┌─ tree.txt
+ 4096 B ├─ AGENTS.md
+ 4096 B ├─ Cargo.toml
+ 4096 B ├─ PLAN.md
+ 4096 B ├─ tree
+12288 B │  ┌─ main.rs
+12288 B ├─ src
+16384 B ├─ Cargo.lock
+45056 B mb-cli
+
+1 directory, 7 files

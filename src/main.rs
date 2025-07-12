@@ -3,7 +3,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
 };
-use tokio_modbus::client::Reader;
+use tokio_modbus::client::{Reader, Writer};
 use tokio_modbus::prelude::*;
 
 /// Flags common to every subcommand
@@ -29,10 +29,10 @@ struct Common {
 /// CLI entry point
 #[derive(Parser, Debug)]
 #[command(
-    author, 
-    version, 
-    about = "Rust Modbus TCP client (single-shot)",
-    after_help = "EXAMPLES:\n    mb read holding --ip 127.0.0.1 --port 502 --addr 1\n    mb read coils --ip 192.168.1.100 --addr 0 --qty 8\n    mb read input --ip 10.0.0.50 --addr 30001 --unit 1"
+    author,
+    version,
+    about = "Modbus TCP client and server",
+    after_help = "EXAMPLES:\n    mb read holding --ip 127.0.0.1 --port 502 --addr 1\n    mb read coils --ip 192.168.1.100 --addr 0 --qty 8\n    mb write holding --ip 127.0.0.1 --addr 100 --value 42\n    mb write coils --ip 127.0.0.1 --addr 0 --value 1,0,1,1\n    mb server --bind 0.0.0.0 --port 502"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -51,6 +51,41 @@ enum Command {
     Write {
         #[command(subcommand)]
         area: WriteArea,
+    },
+
+    /// Run a Modbus server
+    Server {
+        /// IP address to bind to
+        #[arg(long, default_value = "0.0.0.0", value_parser = clap::value_parser!(IpAddr))]
+        bind: IpAddr,
+
+        /// Port to listen on
+        #[arg(long, default_value_t = 502)]
+        port: u16,
+
+        /// Unit/Slave ID
+        #[arg(long, default_value_t = 1)]
+        unit: u8,
+
+        /// Number of coils (0-65535)
+        #[arg(long, default_value_t = 10000)]
+        num_coils: u16,
+
+        /// Number of discrete inputs (0-65535)
+        #[arg(long, default_value_t = 10000)]
+        num_discrete: u16,
+
+        /// Number of holding registers (0-65535)
+        #[arg(long, default_value_t = 10000)]
+        num_holding: u16,
+
+        /// Number of input registers (0-65535)
+        #[arg(long, default_value_t = 10000)]
+        num_input: u16,
+
+        /// Verbose logging
+        #[arg(long)]
+        verbose: bool,
     },
 }
 
@@ -109,9 +144,9 @@ enum WriteArea {
         /// Starting address
         #[arg(long = "addr")]
         start: u16,
-        /// Values to write (repeat flag or comma-sep)
+        /// Value(s) to write (0=OFF, 1=ON; comma-separated for multiple)
         #[arg(
-            long = "values",
+            long = "value",
             value_delimiter = ',',
             num_args = 1..,
             value_parser = clap::value_parser!(u16)
@@ -125,9 +160,9 @@ enum WriteArea {
         /// Starting address
         #[arg(long = "addr")]
         start: u16,
-        /// Values to write (repeat flag or comma-sep)
+        /// Value(s) to write (comma-separated for multiple)
         #[arg(
-            long = "values",
+            long = "value",
             value_delimiter = ',',
             num_args = 1..,
             value_parser = clap::value_parser!(u16)
@@ -280,37 +315,186 @@ async fn main() -> anyhow::Result<()> {
             }
         },
 
-        Command::Write { area } => {
-            match area {
-                WriteArea::Coils {
-                    start,
-                    values,
-                    common,
-                } => {
-                    println!(
-                        "Writing coil at address {} with value {:?} (Unit ID: {})",
-                        start, values, common.unit
-                    );
-                    let _client = connect_to_modbus(common.ip, common.port, common.unit).await?;
+        Command::Write { area } => match area {
+            WriteArea::Coils {
+                start,
+                values,
+                common,
+            } => {
+                let mut client = connect_to_modbus(common.ip, common.port, common.unit).await?;
 
-                    // TODO: Perform actual write
-                    println!("Would write coil value {values:?} at address {start}");
-                }
-                WriteArea::Holding {
-                    start,
-                    values,
-                    common,
-                } => {
-                    println!(
-                        "Writing holding register at address {} with value {:?} (Unit ID: {})",
-                        start, values, common.unit
-                    );
-                    let _client = connect_to_modbus(common.ip, common.port, common.unit).await?;
+                // Convert u16 values to bool values (0 = false, non-zero = true)
+                let bool_values: Vec<bool> = values.iter().map(|&v| v != 0).collect();
 
-                    // TODO: Perform actual write
-                    println!("Would write register value {values:?} at address {start}");
+                if bool_values.len() == 1 {
+                    // Single coil write (FC 5)
+                    println!(
+                        "Writing single coil at address {} with value {} (Unit ID: {})",
+                        start,
+                        if bool_values[0] { "ON" } else { "OFF" },
+                        common.unit
+                    );
+                    match client.write_single_coil(start, bool_values[0]).await {
+                        Ok(response) => match response {
+                            Ok(_) => {
+                                println!("Successfully wrote coil at address {}", start);
+                            }
+                            Err(exception) => {
+                                eprintln!("Modbus exception response: {exception:?}");
+                                return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("Failed to write coil: {e}");
+                            return Err(e.into());
+                        }
+                    }
+                } else {
+                    // Multiple coils write (FC 15)
+                    println!(
+                        "Writing {} coils starting at address {} (Unit ID: {})",
+                        bool_values.len(),
+                        start,
+                        common.unit
+                    );
+                    match client.write_multiple_coils(start, &bool_values).await {
+                        Ok(response) => match response {
+                            Ok(_) => {
+                                println!(
+                                    "Successfully wrote {} coils starting at address {}",
+                                    bool_values.len(),
+                                    start
+                                );
+                                for (i, value) in bool_values.iter().enumerate() {
+                                    let addr = start + i as u16;
+                                    println!(
+                                        "  Address {}: {}",
+                                        addr,
+                                        if *value { "ON" } else { "OFF" }
+                                    );
+                                }
+                            }
+                            Err(exception) => {
+                                eprintln!("Modbus exception response: {exception:?}");
+                                return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("Failed to write coils: {e}");
+                            return Err(e.into());
+                        }
+                    }
                 }
             }
+            WriteArea::Holding {
+                start,
+                values,
+                common,
+            } => {
+                let mut client = connect_to_modbus(common.ip, common.port, common.unit).await?;
+
+                if values.len() == 1 {
+                    // Single register write (FC 6)
+                    println!(
+                        "Writing single holding register at address {} with value {} (0x{:04X}) (Unit ID: {})",
+                        start, values[0], values[0], common.unit
+                    );
+                    match client.write_single_register(start, values[0]).await {
+                        Ok(response) => match response {
+                            Ok(_) => {
+                                println!(
+                                    "Successfully wrote holding register at address {} with value {} (0x{:04X})",
+                                    start, values[0], values[0]
+                                );
+                            }
+                            Err(exception) => {
+                                eprintln!("Modbus exception response: {exception:?}");
+                                return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("Failed to write register: {e}");
+                            return Err(e.into());
+                        }
+                    }
+                } else {
+                    // Multiple registers write (FC 16)
+                    println!(
+                        "Writing {} holding registers starting at address {} (Unit ID: {})",
+                        values.len(),
+                        start,
+                        common.unit
+                    );
+                    match client.write_multiple_registers(start, &values).await {
+                        Ok(response) => match response {
+                            Ok(_) => {
+                                println!(
+                                    "Successfully wrote {} holding registers starting at address {}",
+                                    values.len(),
+                                    start
+                                );
+                                for (i, value) in values.iter().enumerate() {
+                                    let addr = start + i as u16;
+                                    println!("  Address {}: {} (0x{:04X})", addr, value, value);
+                                }
+                            }
+                            Err(exception) => {
+                                eprintln!("Modbus exception response: {exception:?}");
+                                return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("Failed to write registers: {e}");
+                            return Err(e.into());
+                        }
+                    }
+                }
+            }
+        },
+
+        Command::Server {
+            bind,
+            port,
+            unit,
+            num_coils,
+            num_discrete,
+            num_holding,
+            num_input,
+            verbose,
+        } => {
+            println!("Starting Modbus server on {}:{}", bind, port);
+            println!("Configuration:");
+            println!("  Unit ID: {}", unit);
+            println!(
+                "  Coils: {} (addresses 0-{})",
+                num_coils,
+                num_coils.saturating_sub(1)
+            );
+            println!(
+                "  Discrete Inputs: {} (addresses 0-{})",
+                num_discrete,
+                num_discrete.saturating_sub(1)
+            );
+            println!(
+                "  Holding Registers: {} (addresses 0-{})",
+                num_holding,
+                num_holding.saturating_sub(1)
+            );
+            println!(
+                "  Input Registers: {} (addresses 0-{})",
+                num_input,
+                num_input.saturating_sub(1)
+            );
+            println!("  Initialization: Each address value equals its address");
+            println!("  Verbose logging: {}", verbose);
+
+            // TODO: Implement server
+            println!("\nServer implementation coming soon...");
+            println!("Press Ctrl+C to stop the server");
+
+            // Keep the server running until interrupted
+            tokio::signal::ctrl_c().await?;
+            println!("\nShutting down server...");
         }
     }
 
