@@ -12,12 +12,11 @@ use tokio_modbus::server::{Service, rtu, tcp::Server};
 fn validate_coil_qty(s: &str) -> Result<u16, String> {
     let qty: u16 = s
         .parse()
-        .map_err(|_| format!("Invalid quantity '{}': must be a number", s))?;
+        .map_err(|_| format!("Invalid quantity '{s}': must be a number"))?;
 
-    if qty < 1 || qty > 2000 {
+    if !(1..=2000).contains(&qty) {
         Err(format!(
-            "Invalid quantity {}: Modbus specification limits coil operations to 1-2000 coils per request (FC 01/05/15)",
-            qty
+            "Invalid quantity {qty}: Modbus specification limits coil operations to 1-2000 coils per request (FC 01/05/15)"
         ))
     } else {
         Ok(qty)
@@ -27,12 +26,11 @@ fn validate_coil_qty(s: &str) -> Result<u16, String> {
 fn validate_register_qty(s: &str) -> Result<u16, String> {
     let qty: u16 = s
         .parse()
-        .map_err(|_| format!("Invalid quantity '{}': must be a number", s))?;
+        .map_err(|_| format!("Invalid quantity '{s}': must be a number"))?;
 
-    if qty < 1 || qty > 125 {
+    if !(1..=125).contains(&qty) {
         Err(format!(
-            "Invalid quantity {}: Modbus specification limits register operations to 1-125 registers per request (FC 03/04/06/16)",
-            qty
+            "Invalid quantity {qty}: Modbus specification limits register operations to 1-125 registers per request (FC 03/04/06/16)"
         ))
     } else {
         Ok(qty)
@@ -373,9 +371,9 @@ fn print_table_header(columns: &[&str]) {
     // Print column names
     for (i, col) in columns.iter().enumerate() {
         if i == 0 {
-            print!("{:<8}", col);
+            print!("{col:<8}");
         } else {
-            print!(" {:<6}", col);
+            print!(" {col:<6}");
         }
     }
     println!();
