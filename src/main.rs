@@ -339,6 +339,43 @@ impl Service for ModbusService {
     }
 }
 
+fn print_register_table(registers: &[u16], start_addr: u16, verbose: bool) {
+    if registers.is_empty() { return; }
+    
+    // Print header
+    if verbose {
+        println!("{:<8} {:<6} {:<8}", "Address", "Value", "Hex");
+        println!("{:─<8} {:─<6} {:─<8}", "", "", "");
+    } else {
+        println!("{:<8} {:<6}", "Address", "Value");
+        println!("{:─<8} {:─<6}", "", "");
+    }
+    
+    // Print data rows
+    for (i, &value) in registers.iter().enumerate() {
+        let addr = start_addr + i as u16;
+        if verbose {
+            println!("{:<8} {:<6} 0x{:04X}", addr, value, value);
+        } else {
+            println!("{:<8} {:<6}", addr, value);
+        }
+    }
+}
+
+fn print_coil_table(coils: &[bool], start_addr: u16) {
+    if coils.is_empty() { return; }
+    
+    // Print header
+    println!("{:<8} {:<6}", "Address", "Value");
+    println!("{:─<8} {:─<6}", "", "");
+    
+    // Print data rows
+    for (i, &value) in coils.iter().enumerate() {
+        let addr = start_addr + i as u16;
+        println!("{:<8} {:<6}", addr, if value { "ON" } else { "OFF" });
+    }
+}
+
 async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Context> {
     match (&common.ip, &common.device) {
         (Some(ip), None) => {
@@ -411,14 +448,7 @@ async fn main() -> anyhow::Result<()> {
                     Ok(response) => match response {
                         Ok(coils) => {
                             println!("Read {} coil(s) (Unit ID: {}):", coils.len(), common.unit);
-                            for (i, value) in coils.iter().enumerate() {
-                                let addr = start + i as u16;
-                                println!(
-                                    "  Address {}: {}",
-                                    addr,
-                                    if *value { "ON" } else { "OFF" }
-                                );
-                            }
+                            print_coil_table(&coils, start);
                         }
                         Err(exception) => {
                             eprintln!("Modbus exception response: {exception:?}");
@@ -438,14 +468,7 @@ async fn main() -> anyhow::Result<()> {
                     Ok(response) => match response {
                         Ok(inputs) => {
                             println!("Read {} discrete input(s) (Unit ID: {}):", inputs.len(), common.unit);
-                            for (i, value) in inputs.iter().enumerate() {
-                                let addr = start + i as u16;
-                                println!(
-                                    "  Address {}: {}",
-                                    addr,
-                                    if *value { "ON" } else { "OFF" }
-                                );
-                            }
+                            print_coil_table(&inputs, start);
                         }
                         Err(exception) => {
                             eprintln!("Modbus exception response: {exception:?}");
@@ -465,14 +488,7 @@ async fn main() -> anyhow::Result<()> {
                     Ok(response) => match response {
                         Ok(registers) => {
                             println!("Read {} holding register(s) (Unit ID: {}):", registers.len(), common.unit);
-                            for (i, value) in registers.iter().enumerate() {
-                                let addr = start + i as u16;
-                                if common.verbose {
-                                    println!("  Address {addr}: {value} (0x{value:04X})");
-                                } else {
-                                    println!("  Address {addr}: {value}");
-                                }
-                            }
+                            print_register_table(&registers, start, common.verbose);
                         }
                         Err(exception) => {
                             eprintln!("Modbus exception response: {exception:?}");
@@ -492,14 +508,7 @@ async fn main() -> anyhow::Result<()> {
                     Ok(response) => match response {
                         Ok(registers) => {
                             println!("Read {} input register(s) (Unit ID: {}):", registers.len(), common.unit);
-                            for (i, value) in registers.iter().enumerate() {
-                                let addr = start + i as u16;
-                                if common.verbose {
-                                    println!("  Address {addr}: {value} (0x{value:04X})");
-                                } else {
-                                    println!("  Address {addr}: {value}");
-                                }
-                            }
+                            print_register_table(&registers, start, common.verbose);
                         }
                         Err(exception) => {
                             eprintln!("Modbus exception response: {exception:?}");
@@ -554,14 +563,7 @@ async fn main() -> anyhow::Result<()> {
                                     start,
                                     common.unit
                                 );
-                                for (i, value) in bool_values.iter().enumerate() {
-                                    let addr = start + i as u16;
-                                    println!(
-                                        "  Address {}: {}",
-                                        addr,
-                                        if *value { "ON" } else { "OFF" }
-                                    );
-                                }
+                                print_coil_table(&bool_values, start);
                             }
                             Err(exception) => {
                                 eprintln!("Modbus exception response: {exception:?}");
@@ -620,14 +622,7 @@ async fn main() -> anyhow::Result<()> {
                                     start,
                                     common.unit
                                 );
-                                for (i, value) in values.iter().enumerate() {
-                                    let addr = start + i as u16;
-                                    if common.verbose {
-                                        println!("  Address {addr}: {value} (0x{value:04X})");
-                                    } else {
-                                        println!("  Address {addr}: {value}");
-                                    }
-                                }
+                                print_register_table(&values, start, common.verbose);
                             }
                             Err(exception) => {
                                 eprintln!("Modbus exception response: {exception:?}");
