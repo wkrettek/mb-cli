@@ -28,7 +28,7 @@ cargo install --path .
 
 ### Prerequisites
 
-- Rust 1.70+ with Cargo
+- Rust 1.76+ with Cargo
 - For RTU: Access to serial ports (may require permissions)
 
 ## Usage
