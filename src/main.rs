@@ -7,7 +7,7 @@ use std::{
 };
 use tokio_modbus::client::{Reader, Writer};
 use tokio_modbus::prelude::*;
-use tokio_modbus::server::{Service, tcp::Server};
+use tokio_modbus::server::{Service, tcp::Server, rtu};
 
 /// Flags common to every subcommand
 #[derive(Debug, clap::Args)]
@@ -58,13 +58,21 @@ enum Command {
 
     /// Run a Modbus server
     Server {
-        /// IP address to bind to
-        #[arg(long, default_value = "0.0.0.0", value_parser = clap::value_parser!(IpAddr))]
-        bind: IpAddr,
+        /// IP address to bind to (for TCP server)
+        #[arg(long, value_parser = clap::value_parser!(IpAddr), conflicts_with = "device")]
+        ip: Option<IpAddr>,
 
-        /// Port to listen on
+        /// Serial device path (for RTU server)
+        #[arg(long, conflicts_with = "ip")]
+        device: Option<PathBuf>,
+
+        /// Port to listen on (TCP only)
         #[arg(long, default_value_t = 502)]
         port: u16,
+
+        /// Baud rate for serial communication (RTU only)
+        #[arg(long, default_value_t = 9600)]
+        baud: u32,
 
         /// Unit/Slave ID
         #[arg(long, default_value_t = 1)]
@@ -593,8 +601,10 @@ async fn main() -> anyhow::Result<()> {
         },
 
         Command::Server {
-            bind,
+            ip,
+            device,
             port,
+            baud,
             unit: _unit,
             num_coils,
             num_discrete,
@@ -602,38 +612,7 @@ async fn main() -> anyhow::Result<()> {
             num_input,
             verbose: _verbose,
         } => {
-            println!("Starting Modbus TCP server on {bind}:{port}");
-            println!("Configuration:");
-            println!(
-                "  Coils: {} (addresses 0-{})",
-                num_coils,
-                num_coils.saturating_sub(1)
-            );
-            println!(
-                "  Discrete Inputs: {} (addresses 0-{})",
-                num_discrete,
-                num_discrete.saturating_sub(1)
-            );
-            println!(
-                "  Holding Registers: {} (addresses 0-{})",
-                num_holding,
-                num_holding.saturating_sub(1)
-            );
-            println!(
-                "  Input Registers: {} (addresses 0-{})",
-                num_input,
-                num_input.saturating_sub(1)
-            );
-            println!("  Initialization: Each address value equals its address");
-            println!();
-
-            let socket_addr = SocketAddr::new(bind, port);
-            let listener = tokio::net::TcpListener::bind(socket_addr).await?;
-            println!("Modbus TCP server listening on {bind}:{port}");
-            println!("Press Ctrl+C to stop the server");
-
-            let server = Server::new(listener);
-
+            // Auto-detect TCP vs RTU based on arguments
             // Create shared data storage
             let data = Arc::new(Mutex::new(ModbusData::new(
                 num_coils,
@@ -641,35 +620,156 @@ async fn main() -> anyhow::Result<()> {
                 num_holding,
                 num_input,
             )));
-            let service = ModbusService::new(data);
 
-            let on_connected = move |stream, socket_addr| {
-                let service = service.clone();
-                async move {
-                    println!("Client connected: {socket_addr}");
-                    tokio_modbus::server::tcp::accept_tcp_connection(stream, socket_addr, |_| {
-                        Ok(Some(service.clone()))
-                    })
-                }
+            // Print common configuration
+            let print_config = || {
+                println!("Configuration:");
+                println!(
+                    "  Coils: {} (addresses 0-{})",
+                    num_coils,
+                    num_coils.saturating_sub(1)
+                );
+                println!(
+                    "  Discrete Inputs: {} (addresses 0-{})",
+                    num_discrete,
+                    num_discrete.saturating_sub(1)
+                );
+                println!(
+                    "  Holding Registers: {} (addresses 0-{})",
+                    num_holding,
+                    num_holding.saturating_sub(1)
+                );
+                println!(
+                    "  Input Registers: {} (addresses 0-{})",
+                    num_input,
+                    num_input.saturating_sub(1)
+                );
+                println!("  Initialization: Each address value equals its address");
+                println!();
             };
 
-            let on_process_error = |err| {
-                eprintln!("Server error: {err}");
-            };
+            match (ip, device) {
+                (Some(ip_addr), None) => {
+                    // TCP Server
+                    println!("Starting Modbus TCP server on {ip_addr}:{port}");
+                    print_config();
 
-            let ctrl_c = Box::pin(async {
-                tokio::signal::ctrl_c().await.ok();
-            });
+                    let socket_addr = SocketAddr::new(ip_addr, port);
+                    let listener = tokio::net::TcpListener::bind(socket_addr).await?;
+                    println!("Modbus TCP server listening on {ip_addr}:{port}");
+                    println!("Press Ctrl+C to stop the server");
 
-            match server
-                .serve_until(&on_connected, on_process_error, ctrl_c)
-                .await?
-            {
-                tokio_modbus::server::Terminated::Finished => {
-                    println!("\nServer finished");
+                    let server = Server::new(listener);
+                    let service = ModbusService::new(data);
+
+                    let on_connected = move |stream, socket_addr| {
+                        let service = service.clone();
+                        async move {
+                            println!("Client connected: {socket_addr}");
+                            tokio_modbus::server::tcp::accept_tcp_connection(stream, socket_addr, |_| {
+                                Ok(Some(service.clone()))
+                            })
+                        }
+                    };
+
+                    let on_process_error = |err| {
+                        eprintln!("Server error: {err}");
+                    };
+
+                    let ctrl_c = Box::pin(async {
+                        tokio::signal::ctrl_c().await.ok();
+                    });
+
+                    match server
+                        .serve_until(&on_connected, on_process_error, ctrl_c)
+                        .await?
+                    {
+                        tokio_modbus::server::Terminated::Finished => {
+                            println!("\nServer finished");
+                        }
+                        tokio_modbus::server::Terminated::Aborted => {
+                            println!("\nServer stopped");
+                        }
+                    }
                 }
-                tokio_modbus::server::Terminated::Aborted => {
-                    println!("\nServer stopped");
+                (None, Some(device_path)) => {
+                    // RTU Server
+                    println!("Starting Modbus RTU server on {}", device_path.display());
+                    print_config();
+
+                    println!("Using baud rate: {baud}");
+                    
+                    match rtu::Server::new_from_path(&device_path, baud) {
+                        Ok(rtu_server) => {
+                            let service = ModbusService::new(data);
+                            println!("Modbus RTU server listening on {}", device_path.display());
+                            println!("Press Ctrl+C to stop the server");
+
+                            let serve_task = tokio::spawn(async move {
+                                rtu_server.serve_forever(service).await
+                            });
+
+                            // Wait for Ctrl+C
+                            tokio::signal::ctrl_c().await?;
+                            println!("\nStopping RTU server...");
+                            
+                            // Abort the serve task
+                            serve_task.abort();
+                            println!("RTU server stopped");
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to open serial device {}: {}", device_path.display(), e);
+                            return Err(e.into());
+                        }
+                    }
+                }
+                (None, None) => {
+                    // Default to TCP on 0.0.0.0:502
+                    let ip_addr = IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0));
+                    println!("Starting Modbus TCP server on {ip_addr}:{port} (default)");
+                    print_config();
+
+                    let socket_addr = SocketAddr::new(ip_addr, port);
+                    let listener = tokio::net::TcpListener::bind(socket_addr).await?;
+                    println!("Modbus TCP server listening on {ip_addr}:{port}");
+                    println!("Press Ctrl+C to stop the server");
+
+                    let server = Server::new(listener);
+                    let service = ModbusService::new(data);
+
+                    let on_connected = move |stream, socket_addr| {
+                        let service = service.clone();
+                        async move {
+                            println!("Client connected: {socket_addr}");
+                            tokio_modbus::server::tcp::accept_tcp_connection(stream, socket_addr, |_| {
+                                Ok(Some(service.clone()))
+                            })
+                        }
+                    };
+
+                    let on_process_error = |err| {
+                        eprintln!("Server error: {err}");
+                    };
+
+                    let ctrl_c = Box::pin(async {
+                        tokio::signal::ctrl_c().await.ok();
+                    });
+
+                    match server
+                        .serve_until(&on_connected, on_process_error, ctrl_c)
+                        .await?
+                    {
+                        tokio_modbus::server::Terminated::Finished => {
+                            println!("\nServer finished");
+                        }
+                        tokio_modbus::server::Terminated::Aborted => {
+                            println!("\nServer stopped");
+                        }
+                    }
+                }
+                (Some(_), Some(_)) => {
+                    // This should be prevented by clap conflicts
+                    return Err(anyhow::anyhow!("Cannot specify both --ip and --device"));
                 }
             }
         }
