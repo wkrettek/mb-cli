@@ -8,7 +8,7 @@ readme = "README.md"
 homepage = "https://github.com/wkrettek/mb-cli"
 repository = "https://github.com/wkrettek/mb-cli"
 license = "MIT OR Apache-2.0"
-keywords = ["modbus", "tcp", "rtu", "industrial", "iot", "automation"]
+keywords = ["modbus", "industrial", "iot", "automation"]
 categories = ["command-line-utilities", "network-programming"]
 exclude = [
     "target/",
