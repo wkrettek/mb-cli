@@ -108,7 +108,6 @@
         - [x] Command reference
         - [x] Protocol detection explanation
         - [x] Use case examples
-    - [ ] Example scripts
 - [ ] Package and publish
     - [ ] Cargo.toml metadata for publishing
     - [ ] Release preparation
