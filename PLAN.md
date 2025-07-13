@@ -27,7 +27,7 @@
 ## Before Publishing: Medium Priority
 - [ ] Clean up cli output
     - [ ] cli
-    - [ ] Hide more detail behind --verbose/-v
+    - [x] Hide more detail behind --verbose/-v
     - Maybe print a table of results?
     - [ ] server
         - [ ] print the action and from where
@@ -48,7 +48,6 @@
     - [ ] Mock server tests
 - [ ] Create comprehensive documentation and examples
     - [ ] README with usage examples
-    - [ ] Man page generation
     - [ ] Example scripts
 - [ ] Package and publish
     - [ ] Cargo.toml metadata for publishing

@@ -172,6 +172,7 @@ enum WriteArea {
             long = "value",
             value_delimiter = ',',
             num_args = 1..,
+            required = true,
             value_parser = clap::value_parser!(u16)
         )]
         values: Vec<u16>,
@@ -188,6 +189,7 @@ enum WriteArea {
             long = "value",
             value_delimiter = ',',
             num_args = 1..,
+            required = true,
             value_parser = clap::value_parser!(u16)
         )]
         values: Vec<u16>,
@@ -465,7 +467,11 @@ async fn main() -> anyhow::Result<()> {
                             println!("Read {} holding register(s) (Unit ID: {}):", registers.len(), common.unit);
                             for (i, value) in registers.iter().enumerate() {
                                 let addr = start + i as u16;
-                                println!("  Address {addr}: {value} (0x{value:04X})");
+                                if common.verbose {
+                                    println!("  Address {addr}: {value} (0x{value:04X})");
+                                } else {
+                                    println!("  Address {addr}: {value}");
+                                }
                             }
                         }
                         Err(exception) => {
@@ -488,7 +494,11 @@ async fn main() -> anyhow::Result<()> {
                             println!("Read {} input register(s) (Unit ID: {}):", registers.len(), common.unit);
                             for (i, value) in registers.iter().enumerate() {
                                 let addr = start + i as u16;
-                                println!("  Address {addr}: {value} (0x{value:04X})");
+                                if common.verbose {
+                                    println!("  Address {addr}: {value} (0x{value:04X})");
+                                } else {
+                                    println!("  Address {addr}: {value}");
+                                }
                             }
                         }
                         Err(exception) => {
@@ -517,16 +527,11 @@ async fn main() -> anyhow::Result<()> {
 
                 if bool_values.len() == 1 {
                     // Single coil write (FC 5)
-                    println!(
-                        "Writing single coil at address {} with value {} (Unit ID: {})",
-                        start,
-                        if bool_values[0] { "ON" } else { "OFF" },
-                        common.unit
-                    );
                     match client.write_single_coil(start, bool_values[0]).await {
                         Ok(response) => match response {
                             Ok(_) => {
-                                println!("Wrote coil at address {start} (Unit ID: {})", common.unit);
+                                println!("Wrote coil at address {start} with value {} (Unit ID: {})", 
+                                    if bool_values[0] { "ON" } else { "OFF" }, common.unit);
                             }
                             Err(exception) => {
                                 eprintln!("Modbus exception response: {exception:?}");
@@ -540,12 +545,6 @@ async fn main() -> anyhow::Result<()> {
                     }
                 } else {
                     // Multiple coils write (FC 15)
-                    println!(
-                        "Writing {} coils starting at address {} (Unit ID: {})",
-                        bool_values.len(),
-                        start,
-                        common.unit
-                    );
                     match client.write_multiple_coils(start, &bool_values).await {
                         Ok(response) => match response {
                             Ok(_) => {
@@ -585,17 +584,20 @@ async fn main() -> anyhow::Result<()> {
 
                 if values.len() == 1 {
                     // Single register write (FC 6)
-                    println!(
-                        "Writing single holding register at address {} with value {} (0x{:04X}) (Unit ID: {})",
-                        start, values[0], values[0], common.unit
-                    );
                     match client.write_single_register(start, values[0]).await {
                         Ok(response) => match response {
                             Ok(_) => {
-                                println!(
-                                    "Wrote holding register at address {} with value {} (0x{:04X}) (Unit ID: {})",
-                                    start, values[0], values[0], common.unit
-                                );
+                                if common.verbose {
+                                    println!(
+                                        "Wrote holding register at address {} with value {} (0x{:04X}) (Unit ID: {})",
+                                        start, values[0], values[0], common.unit
+                                    );
+                                } else {
+                                    println!(
+                                        "Wrote holding register at address {} with value {} (Unit ID: {})",
+                                        start, values[0], common.unit
+                                    );
+                                }
                             }
                             Err(exception) => {
                                 eprintln!("Modbus exception response: {exception:?}");
@@ -609,24 +611,22 @@ async fn main() -> anyhow::Result<()> {
                     }
                 } else {
                     // Multiple registers write (FC 16)
-                    println!(
-                        "Writing {} holding registers starting at address {} (Unit ID: {})",
-                        values.len(),
-                        start,
-                        common.unit
-                    );
                     match client.write_multiple_registers(start, &values).await {
                         Ok(response) => match response {
                             Ok(_) => {
                                 println!(
-                                    "Wrote {} holding registers starting at address {} (Unit ID: {})",
+                                    "Wrote {} holding register(s) starting at address {} (Unit ID: {})",
                                     values.len(),
                                     start,
                                     common.unit
                                 );
                                 for (i, value) in values.iter().enumerate() {
                                     let addr = start + i as u16;
-                                    println!("  Address {addr}: {value} (0x{value:04X})");
+                                    if common.verbose {
+                                        println!("  Address {addr}: {value} (0x{value:04X})");
+                                    } else {
+                                        println!("  Address {addr}: {value}");
+                                    }
                                 }
                             }
                             Err(exception) => {
