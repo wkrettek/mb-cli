@@ -7,7 +7,7 @@ use std::{
 };
 use tokio_modbus::client::{Reader, Writer};
 use tokio_modbus::prelude::*;
-use tokio_modbus::server::{Service, tcp::Server, rtu};
+use tokio_modbus::server::{Service, rtu, tcp::Server};
 
 /// Flags common to every subcommand
 #[derive(Debug, clap::Args)]
@@ -242,6 +242,7 @@ impl Service for ModbusService {
 
         let response = match req {
             Request::ReadCoils(addr, qty) => {
+                // Note: We don't have access to client IP in the service layer
                 println!("Read {} coil(s) starting at {}", qty, addr);
                 let start = addr as usize;
                 let end = start + qty as usize;
@@ -340,8 +341,10 @@ impl Service for ModbusService {
 }
 
 fn print_register_table(registers: &[u16], start_addr: u16, verbose: bool) {
-    if registers.is_empty() { return; }
-    
+    if registers.is_empty() {
+        return;
+    }
+
     // Print header
     if verbose {
         println!("{:<8} {:<6} {:<8}", "Address", "Value", "Hex");
@@ -350,7 +353,7 @@ fn print_register_table(registers: &[u16], start_addr: u16, verbose: bool) {
         println!("{:<8} {:<6}", "Address", "Value");
         println!("{:─<8} {:─<6}", "", "");
     }
-    
+
     // Print data rows
     for (i, &value) in registers.iter().enumerate() {
         let addr = start_addr + i as u16;
@@ -363,12 +366,14 @@ fn print_register_table(registers: &[u16], start_addr: u16, verbose: bool) {
 }
 
 fn print_coil_table(coils: &[bool], start_addr: u16) {
-    if coils.is_empty() { return; }
-    
+    if coils.is_empty() {
+        return;
+    }
+
     // Print header
     println!("{:<8} {:<6}", "Address", "Value");
     println!("{:─<8} {:─<6}", "", "");
-    
+
     // Print data rows
     for (i, &value) in coils.iter().enumerate() {
         let addr = start_addr + i as u16;
@@ -382,14 +387,20 @@ async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Context> {
             // TCP connection
             let socket_addr = SocketAddr::new(*ip, common.port);
             if common.verbose {
-                println!("Connecting to Modbus TCP server at {ip}:{} (Unit ID: {})...", common.port, common.unit);
+                println!(
+                    "Connecting to Modbus TCP server at {ip}:{} (Unit ID: {})...",
+                    common.port, common.unit
+                );
             }
 
             match client::tcp::connect(socket_addr).await {
                 Ok(mut ctx) => {
                     ctx.set_slave(Slave(common.unit));
                     if common.verbose {
-                        println!("Successfully connected to Modbus TCP server at {ip}:{}", common.port);
+                        println!(
+                            "Successfully connected to Modbus TCP server at {ip}:{}",
+                            common.port
+                        );
                     }
                     Ok(ctx)
                 }
@@ -402,11 +413,18 @@ async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Context> {
         (None, Some(device)) => {
             // RTU connection
             if common.verbose {
-                println!("Connecting to Modbus RTU device at {} (Baud: {}, Unit ID: {})...", 
-                         device.display(), common.baud, common.unit);
+                println!(
+                    "Connecting to Modbus RTU device at {} (Baud: {}, Unit ID: {})...",
+                    device.display(),
+                    common.baud,
+                    common.unit
+                );
             }
 
-            match tokio_serial::SerialStream::open(&tokio_serial::new(device.to_string_lossy(), common.baud)) {
+            match tokio_serial::SerialStream::open(&tokio_serial::new(
+                device.to_string_lossy(),
+                common.baud,
+            )) {
                 Ok(mut serial) => {
                     // Disable exclusive access for virtual ports
                     if let Err(e) = serial.set_exclusive(false) {
@@ -416,7 +434,10 @@ async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Context> {
                     }
                     let ctx = client::rtu::attach_slave(serial, Slave(common.unit));
                     if common.verbose {
-                        println!("Successfully connected to Modbus RTU device at {}", device.display());
+                        println!(
+                            "Successfully connected to Modbus RTU device at {}",
+                            device.display()
+                        );
                     }
                     Ok(ctx)
                 }
@@ -426,12 +447,10 @@ async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Context> {
                 }
             }
         }
-        (None, None) => {
-            Err(anyhow::anyhow!("Must specify either --ip for TCP or --device for RTU"))
-        }
-        (Some(_), Some(_)) => {
-            Err(anyhow::anyhow!("Cannot specify both --ip and --device"))
-        }
+        (None, None) => Err(anyhow::anyhow!(
+            "Must specify either --ip for TCP or --device for RTU"
+        )),
+        (Some(_), Some(_)) => Err(anyhow::anyhow!("Cannot specify both --ip and --device")),
     }
 }
 
@@ -467,7 +486,11 @@ async fn main() -> anyhow::Result<()> {
                 match client.read_discrete_inputs(start, qty).await {
                     Ok(response) => match response {
                         Ok(inputs) => {
-                            println!("Read {} discrete input(s) (Unit ID: {}):", inputs.len(), common.unit);
+                            println!(
+                                "Read {} discrete input(s) (Unit ID: {}):",
+                                inputs.len(),
+                                common.unit
+                            );
                             print_coil_table(&inputs, start);
                         }
                         Err(exception) => {
@@ -487,7 +510,11 @@ async fn main() -> anyhow::Result<()> {
                 match client.read_holding_registers(start, qty).await {
                     Ok(response) => match response {
                         Ok(registers) => {
-                            println!("Read {} holding register(s) (Unit ID: {}):", registers.len(), common.unit);
+                            println!(
+                                "Read {} holding register(s) (Unit ID: {}):",
+                                registers.len(),
+                                common.unit
+                            );
                             print_register_table(&registers, start, common.verbose);
                         }
                         Err(exception) => {
@@ -507,7 +534,11 @@ async fn main() -> anyhow::Result<()> {
                 match client.read_input_registers(start, qty).await {
                     Ok(response) => match response {
                         Ok(registers) => {
-                            println!("Read {} input register(s) (Unit ID: {}):", registers.len(), common.unit);
+                            println!(
+                                "Read {} input register(s) (Unit ID: {}):",
+                                registers.len(),
+                                common.unit
+                            );
                             print_register_table(&registers, start, common.verbose);
                         }
                         Err(exception) => {
@@ -539,8 +570,11 @@ async fn main() -> anyhow::Result<()> {
                     match client.write_single_coil(start, bool_values[0]).await {
                         Ok(response) => match response {
                             Ok(_) => {
-                                println!("Wrote coil at address {start} with value {} (Unit ID: {})", 
-                                    if bool_values[0] { "ON" } else { "OFF" }, common.unit);
+                                println!(
+                                    "Wrote coil at address {start} with value {} (Unit ID: {})",
+                                    if bool_values[0] { "ON" } else { "OFF" },
+                                    common.unit
+                                );
                             }
                             Err(exception) => {
                                 eprintln!("Modbus exception response: {exception:?}");
@@ -704,9 +738,11 @@ async fn main() -> anyhow::Result<()> {
                         let service = service.clone();
                         async move {
                             println!("Client connected: {socket_addr}");
-                            tokio_modbus::server::tcp::accept_tcp_connection(stream, socket_addr, |_| {
-                                Ok(Some(service.clone()))
-                            })
+                            tokio_modbus::server::tcp::accept_tcp_connection(
+                                stream,
+                                socket_addr,
+                                |_| Ok(Some(service.clone())),
+                            )
                         }
                     };
 
@@ -736,33 +772,41 @@ async fn main() -> anyhow::Result<()> {
                     print_config();
 
                     println!("Using baud rate: {baud}");
-                    
-                    match tokio_serial::SerialStream::open(&tokio_serial::new(device_path.to_string_lossy(), baud)) {
+
+                    match tokio_serial::SerialStream::open(&tokio_serial::new(
+                        device_path.to_string_lossy(),
+                        baud,
+                    )) {
                         Ok(mut serial) => {
                             // Disable exclusive access for virtual ports
                             if let Err(e) = serial.set_exclusive(false) {
                                 println!("Warning: Could not disable exclusive access: {e}");
                             }
-                            
+
                             let rtu_server = rtu::Server::new(serial);
                             let service = ModbusService::new(data);
                             println!("Modbus RTU server listening on {}", device_path.display());
                             println!("Press Ctrl+C to stop the server");
 
-                            let serve_task = tokio::spawn(async move {
-                                rtu_server.serve_forever(service).await
-                            });
+                            let serve_task =
+                                tokio::spawn(
+                                    async move { rtu_server.serve_forever(service).await },
+                                );
 
                             // Wait for Ctrl+C
                             tokio::signal::ctrl_c().await?;
                             println!("\nStopping RTU server...");
-                            
+
                             // Abort the serve task
                             serve_task.abort();
                             println!("RTU server stopped");
                         }
                         Err(e) => {
-                            eprintln!("Failed to open serial device {}: {}", device_path.display(), e);
+                            eprintln!(
+                                "Failed to open serial device {}: {}",
+                                device_path.display(),
+                                e
+                            );
                             return Err(e.into());
                         }
                     }
@@ -785,9 +829,11 @@ async fn main() -> anyhow::Result<()> {
                         let service = service.clone();
                         async move {
                             println!("Client connected: {socket_addr}");
-                            tokio_modbus::server::tcp::accept_tcp_connection(stream, socket_addr, |_| {
-                                Ok(Some(service.clone()))
-                            })
+                            tokio_modbus::server::tcp::accept_tcp_connection(
+                                stream,
+                                socket_addr,
+                                |_| Ok(Some(service.clone())),
+                            )
                         }
                     };
 
