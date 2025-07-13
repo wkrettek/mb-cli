@@ -236,6 +236,7 @@ impl Service for ModbusService {
 
         let response = match req {
             Request::ReadCoils(addr, qty) => {
+                println!("Read {} coil(s) starting at {}", qty, addr);
                 let start = addr as usize;
                 let end = start + qty as usize;
                 if end <= data.coils.len() {
@@ -246,6 +247,7 @@ impl Service for ModbusService {
                 }
             }
             Request::ReadDiscreteInputs(addr, qty) => {
+                println!("Read {} discrete input(s) starting at {}", qty, addr);
                 let start = addr as usize;
                 let end = start + qty as usize;
                 if end <= data.discrete_inputs.len() {
@@ -256,6 +258,7 @@ impl Service for ModbusService {
                 }
             }
             Request::ReadHoldingRegisters(addr, qty) => {
+                println!("Read {} holding register(s) starting at {}", qty, addr);
                 let start = addr as usize;
                 let end = start + qty as usize;
                 if end <= data.holding_registers.len() {
@@ -266,6 +269,7 @@ impl Service for ModbusService {
                 }
             }
             Request::ReadInputRegisters(addr, qty) => {
+                println!("Read {} input register(s) starting at {}", qty, addr);
                 let start = addr as usize;
                 let end = start + qty as usize;
                 if end <= data.input_registers.len() {
