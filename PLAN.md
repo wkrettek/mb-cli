@@ -52,21 +52,22 @@
         - [x] Extract common write operation error handling (2x duplication) 
         - [x] Extract TCP server setup (2x duplication)
         - [x] Create error handling utilities (handle_modbus_response helper)
-    - [ ] Function length:
-        - [ ] Break down 411-line main() function
-        - [ ] Extract server command handling
-    - [ ] Break into multiple files:
-        - [ ] cli.rs - CLI structs and parsing
-        - [ ] client.rs - Client connection and operations
-        - [ ] server.rs - Server implementation  
-        - [ ] table.rs - Table formatting
-        - [ ] main.rs - Just orchestration
+    - [x] Break into multiple files:
+        - [x] cli.rs - CLI structs and parsing
+        - [x] client.rs - Client connection and operations
+            - [x] tcp
+            - [x] rtu
+        - [x] server.rs - Server implementation  
+            - [x] tcp
+            - [x] rtu
+        - [x] table.rs - Table formatting
+        - [x] main.rs - Just orchestration
     - [x] Remove dead code:
         - [x] Remove unused `format` field from Common struct
         - [x] Remove unused server variables (_unit, _verbose)
         - [x] Remove unused `arg` import from clap
         - [x] Fix help text examples (--bind → --ip)
-    - [ ] Add constants for magic numbers (ports, baud rates)
+    - [x] Add constants for magic numbers (ports, baud rates) - Won't do: code is clear as-is
     - [ ] Get multiple AI reviews
         - [x] o3
         - [ ] gemini

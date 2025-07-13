@@ -1,572 +1,17 @@
-use clap::{Parser, Subcommand};
-use std::{
-    net::{IpAddr, SocketAddr},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::sync::Arc;
 use tokio_modbus::client::{Reader, Writer};
-use tokio_modbus::prelude::*;
-use tokio_modbus::server::{Service, rtu, tcp::Server};
 
-// Custom validation functions for Modbus specification limits
-fn validate_coil_qty(s: &str) -> Result<u16, String> {
-    let qty: u16 = s
-        .parse()
-        .map_err(|_| format!("Invalid quantity '{s}': must be a number"))?;
+mod cli;
+mod client;
+mod server;
+mod table;
 
-    if !(1..=2000).contains(&qty) {
-        Err(format!(
-            "Invalid quantity {qty}: Modbus specification limits coil operations to 1-2000 coils per request (FC 01/05/15)"
-        ))
-    } else {
-        Ok(qty)
-    }
-}
+use cli::{Cli, Command, ReadArea, WriteArea};
+use client::{connect_to_modbus, modbus_operation_with_timeout};
+use server::{ModbusData, run_tcp_server, run_rtu_server};
+use table::{print_register_table, print_coil_table};
 
-fn validate_register_qty(s: &str) -> Result<u16, String> {
-    let qty: u16 = s
-        .parse()
-        .map_err(|_| format!("Invalid quantity '{s}': must be a number"))?;
-
-    if !(1..=125).contains(&qty) {
-        Err(format!(
-            "Invalid quantity {qty}: Modbus specification limits register operations to 1-125 registers per request (FC 03/04/06/16)"
-        ))
-    } else {
-        Ok(qty)
-    }
-}
-
-/// Flags common to every subcommand
-#[derive(Debug, clap::Args)]
-struct Common {
-    /// Modbus TCP server IP address (for TCP client)
-    #[arg(long, value_parser = clap::value_parser!(IpAddr), conflicts_with = "device")]
-    ip: Option<IpAddr>,
-
-    /// Serial device path (for RTU client)
-    #[arg(long, conflicts_with = "ip")]
-    device: Option<PathBuf>,
-
-    /// Modbus TCP server port (TCP only)
-    #[arg(long, default_value_t = 502)]
-    port: u16,
-
-    /// Baud rate for serial communication (RTU only)
-    #[arg(long, default_value_t = 9600)]
-    baud: u32,
-
-    /// Modbus slave / unit ID
-    #[arg(long, default_value_t = 0)]
-    unit: u8,
-
-    /// Verbose output
-    #[arg(long, short)]
-    verbose: bool,
-}
-
-/// CLI entry point
-#[derive(Parser, Debug)]
-#[command(
-    author,
-    version,
-    about = "Modbus TCP client and server",
-    after_help = "EXAMPLES:\n    mb read holding --ip 127.0.0.1 --port 502 --addr 1\n    mb read coils --ip 192.168.1.100 --addr 0 --qty 8\n    mb write holding --ip 127.0.0.1 --addr 100 --value 42\n    mb write coils --ip 127.0.0.1 --addr 0 --value 1,0,1,1\n    mb server --ip 0.0.0.0 --port 502"
-)]
-struct Cli {
-    #[command(subcommand)]
-    cmd: Command,
-}
-
-#[derive(Subcommand, Debug)]
-enum Command {
-    /// Read coils, discrete inputs, input or holding registers
-    Read {
-        #[command(subcommand)]
-        area: ReadArea,
-    },
-
-    /// Write coils or holding registers
-    Write {
-        #[command(subcommand)]
-        area: WriteArea,
-    },
-
-    /// Run a Modbus server
-    Server {
-        /// IP address to bind to (for TCP server)
-        #[arg(long, value_parser = clap::value_parser!(IpAddr), conflicts_with = "device")]
-        ip: Option<IpAddr>,
-
-        /// Serial device path (for RTU server)
-        #[arg(long, conflicts_with = "ip")]
-        device: Option<PathBuf>,
-
-        /// Port to listen on (TCP only)
-        #[arg(long, default_value_t = 502)]
-        port: u16,
-
-        /// Baud rate for serial communication (RTU only)
-        #[arg(long, default_value_t = 9600)]
-        baud: u32,
-
-        /// Unit/Slave ID
-        #[arg(long, default_value_t = 1)]
-        unit: u8,
-
-        /// Number of coils (0-65535)
-        #[arg(long, default_value_t = 10000)]
-        num_coils: u16,
-
-        /// Number of discrete inputs (0-65535)
-        #[arg(long, default_value_t = 10000)]
-        num_discrete: u16,
-
-        /// Number of holding registers (0-65535)
-        #[arg(long, default_value_t = 10000)]
-        num_holding: u16,
-
-        /// Number of input registers (0-65535)
-        #[arg(long, default_value_t = 10000)]
-        num_input: u16,
-
-        /// Verbose logging
-        #[arg(long)]
-        verbose: bool,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum ReadArea {
-    /// Read Coils (FC 1)
-    Coil {
-        /// Starting address
-        #[arg(long = "addr")]
-        start: u16,
-        /// Quantity (default 1, max 2000)
-        #[arg(long = "qty", default_value_t = 1, value_parser = validate_coil_qty)]
-        qty: u16,
-        #[command(flatten)]
-        common: Common,
-    },
-    /// Read Discrete Inputs (FC 2)
-    Discrete {
-        /// Starting address
-        #[arg(long = "addr")]
-        start: u16,
-        /// Quantity (default 1, max 2000)
-        #[arg(long = "qty", default_value_t = 1, value_parser = validate_coil_qty)]
-        qty: u16,
-        #[command(flatten)]
-        common: Common,
-    },
-    /// Read Holding Registers (FC 3)
-    Holding {
-        /// Starting address
-        #[arg(long = "addr")]
-        start: u16,
-        /// Quantity (default 1, max 125)
-        #[arg(long = "qty", default_value_t = 1, value_parser = validate_register_qty)]
-        qty: u16,
-        #[command(flatten)]
-        common: Common,
-    },
-    /// Read Input Registers (FC 4)
-    Input {
-        /// Starting address
-        #[arg(long = "addr")]
-        start: u16,
-        /// Quantity (default 1, max 125)
-        #[arg(long = "qty", default_value_t = 1, value_parser = validate_register_qty)]
-        qty: u16,
-        #[command(flatten)]
-        common: Common,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum WriteArea {
-    /// Write Single/Multiple Coils (FC 5/15)
-    Coil {
-        /// Starting address
-        #[arg(long = "addr")]
-        start: u16,
-        /// Value(s) to write (0=OFF, 1=ON; comma-separated for multiple)
-        #[arg(
-            long = "value",
-            value_delimiter = ',',
-            num_args = 1..,
-            required = true,
-            value_parser = clap::value_parser!(u16)
-        )]
-        values: Vec<u16>,
-        #[command(flatten)]
-        common: Common,
-    },
-    /// Write Single/Multiple Holding Registers (FC 6/16)
-    Holding {
-        /// Starting address
-        #[arg(long = "addr")]
-        start: u16,
-        /// Value(s) to write (comma-separated for multiple)
-        #[arg(
-            long = "value",
-            value_delimiter = ',',
-            num_args = 1..,
-            required = true,
-            value_parser = clap::value_parser!(u16)
-        )]
-        values: Vec<u16>,
-        #[command(flatten)]
-        common: Common,
-    },
-}
-
-#[derive(Debug)]
-struct ModbusData {
-    coils: Vec<bool>,
-    discrete_inputs: Vec<bool>,
-    holding_registers: Vec<u16>,
-    input_registers: Vec<u16>,
-}
-
-impl ModbusData {
-    fn new(num_coils: u16, num_discrete: u16, num_holding: u16, num_input: u16) -> Self {
-        Self {
-            coils: vec![false; num_coils as usize],
-            discrete_inputs: vec![false; num_discrete as usize],
-            holding_registers: (0..num_holding).collect(),
-            input_registers: (0..num_input).collect(),
-        }
-    }
-}
-
-#[derive(Clone)]
-struct ModbusService {
-    data: Arc<tokio::sync::RwLock<ModbusData>>,
-}
-
-impl ModbusService {
-    fn new(data: Arc<tokio::sync::RwLock<ModbusData>>) -> Self {
-        Self { data }
-    }
-}
-
-impl Service for ModbusService {
-    type Request = Request<'static>;
-    type Response = Response;
-    type Exception = ExceptionCode;
-    type Future = std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Exception>> + Send>,
-    >;
-
-    fn call(&self, req: Self::Request) -> Self::Future {
-        let data = self.data.clone();
-        Box::pin(async move {
-            let mut data = data.write().await;
-
-            let response = match req {
-                Request::ReadCoils(addr, qty) => {
-                    // Note: We don't have access to client IP in the service layer
-                    println!("Read {qty} coil(s) starting at {addr}");
-                    let start = addr as usize;
-                    let end = start + qty as usize;
-                    if end <= data.coils.len() {
-                        let coils = data.coils[start..end].to_vec();
-                        Response::ReadCoils(coils)
-                    } else {
-                        return Err(ExceptionCode::IllegalDataAddress);
-                    }
-                }
-                Request::ReadDiscreteInputs(addr, qty) => {
-                    println!("Read {qty} discrete input(s) starting at {addr}");
-                    let start = addr as usize;
-                    let end = start + qty as usize;
-                    if end <= data.discrete_inputs.len() {
-                        let inputs = data.discrete_inputs[start..end].to_vec();
-                        Response::ReadDiscreteInputs(inputs)
-                    } else {
-                        return Err(ExceptionCode::IllegalDataAddress);
-                    }
-                }
-                Request::ReadHoldingRegisters(addr, qty) => {
-                    println!("Read {qty} holding register(s) starting at {addr}");
-                    let start = addr as usize;
-                    let end = start + qty as usize;
-                    if end <= data.holding_registers.len() {
-                        let registers = data.holding_registers[start..end].to_vec();
-                        Response::ReadHoldingRegisters(registers)
-                    } else {
-                        return Err(ExceptionCode::IllegalDataAddress);
-                    }
-                }
-                Request::ReadInputRegisters(addr, qty) => {
-                    println!("Read {qty} input register(s) starting at {addr}");
-                    let start = addr as usize;
-                    let end = start + qty as usize;
-                    if end <= data.input_registers.len() {
-                        let registers = data.input_registers[start..end].to_vec();
-                        Response::ReadInputRegisters(registers)
-                    } else {
-                        return Err(ExceptionCode::IllegalDataAddress);
-                    }
-                }
-                Request::WriteSingleCoil(addr, value) => {
-                    let addr = addr as usize;
-                    if addr < data.coils.len() {
-                        println!("Write coil {addr}: {value}");
-                        data.coils[addr] = value;
-                        Response::WriteSingleCoil(addr as u16, value)
-                    } else {
-                        return Err(ExceptionCode::IllegalDataAddress);
-                    }
-                }
-                Request::WriteSingleRegister(addr, value) => {
-                    let addr = addr as usize;
-                    if addr < data.holding_registers.len() {
-                        println!("Write register {addr}: {value}");
-                        data.holding_registers[addr] = value;
-                        Response::WriteSingleRegister(addr as u16, value)
-                    } else {
-                        return Err(ExceptionCode::IllegalDataAddress);
-                    }
-                }
-                Request::WriteMultipleCoils(addr, values) => {
-                    let start = addr as usize;
-                    let end = start + values.len();
-                    if end <= data.coils.len() {
-                        println!("Write {} coils starting at {addr}", values.len());
-                        for (i, &value) in values.iter().enumerate() {
-                            data.coils[start + i] = value;
-                        }
-                        Response::WriteMultipleCoils(addr, values.len() as u16)
-                    } else {
-                        return Err(ExceptionCode::IllegalDataAddress);
-                    }
-                }
-                Request::WriteMultipleRegisters(addr, values) => {
-                    let start = addr as usize;
-                    let end = start + values.len();
-                    if end <= data.holding_registers.len() {
-                        println!("Write {} registers starting at {addr}", values.len());
-                        for (i, &value) in values.iter().enumerate() {
-                            data.holding_registers[start + i] = value;
-                        }
-                        Response::WriteMultipleRegisters(addr, values.len() as u16)
-                    } else {
-                        return Err(ExceptionCode::IllegalDataAddress);
-                    }
-                }
-                _ => {
-                    return Err(ExceptionCode::IllegalFunction);
-                }
-            };
-            Ok(response)
-        })
-    }
-}
-
-// Helper function for table headers
-fn print_table_header(columns: &[&str]) {
-    // Print column names
-    for (i, col) in columns.iter().enumerate() {
-        if i == 0 {
-            print!("{col:<8}");
-        } else {
-            print!(" {col:<6}");
-        }
-    }
-    println!();
-
-    // Print separator line
-    for (i, _) in columns.iter().enumerate() {
-        if i == 0 {
-            print!("{:─<8}", "");
-        } else {
-            print!(" {:─<6}", "");
-        }
-    }
-    println!();
-}
-
-fn print_register_table(registers: &[u16], start_addr: u16, verbose: bool) {
-    if registers.is_empty() {
-        return;
-    }
-
-    // Use helper for header
-    if verbose {
-        print_table_header(&["Address", "Value", "Hex"]);
-    } else {
-        print_table_header(&["Address", "Value"]);
-    }
-
-    // Print data rows
-    for (i, &value) in registers.iter().enumerate() {
-        let addr = start_addr + i as u16;
-        if verbose {
-            println!("{addr:<8} {value:<6} 0x{value:04X}");
-        } else {
-            println!("{addr:<8} {value:<6}");
-        }
-    }
-}
-
-fn print_coil_table(coils: &[bool], start_addr: u16) {
-    if coils.is_empty() {
-        return;
-    }
-
-    // Use helper for header
-    print_table_header(&["Address", "Value"]);
-
-    // Print data rows
-    for (i, &value) in coils.iter().enumerate() {
-        let addr = start_addr + i as u16;
-        println!("{:<8} {:<6}", addr, if value { "ON" } else { "OFF" });
-    }
-}
-
-// Generic helper for handling Modbus response errors
-async fn handle_modbus_response<T, E>(
-    result: Result<Result<T, E>, tokio_modbus::Error>,
-    operation: &str,
-) -> anyhow::Result<T>
-where
-    E: std::fmt::Debug,
-{
-    match result {
-        Ok(response) => match response {
-            Ok(data) => Ok(data),
-            Err(exception) => {
-                eprintln!("Modbus exception response: {exception:?}");
-                Err(anyhow::anyhow!("Modbus exception: {:?}", exception))
-            }
-        },
-        Err(e) => {
-            eprintln!("Failed to {operation}: {e}");
-            Err(e.into())
-        }
-    }
-}
-
-async fn run_tcp_server(
-    ip_addr: IpAddr,
-    port: u16,
-    data: Arc<tokio::sync::RwLock<ModbusData>>,
-) -> anyhow::Result<()> {
-    let socket_addr = SocketAddr::new(ip_addr, port);
-    let listener = tokio::net::TcpListener::bind(socket_addr).await?;
-    println!("Modbus TCP server listening on {ip_addr}:{port}");
-    println!("Press Ctrl+C to stop the server");
-
-    let server = Server::new(listener);
-    let service = ModbusService::new(data);
-
-    let on_connected = move |stream, socket_addr| {
-        let service = service.clone();
-        async move {
-            println!("Client connected: {socket_addr}");
-            tokio_modbus::server::tcp::accept_tcp_connection(stream, socket_addr, |_| {
-                Ok(Some(service.clone()))
-            })
-        }
-    };
-
-    let on_process_error = |err| {
-        eprintln!("Server error: {err}");
-    };
-
-    let ctrl_c = Box::pin(async {
-        tokio::signal::ctrl_c().await.ok();
-    });
-
-    match server
-        .serve_until(&on_connected, on_process_error, ctrl_c)
-        .await?
-    {
-        tokio_modbus::server::Terminated::Finished => {
-            println!("\nServer finished");
-        }
-        tokio_modbus::server::Terminated::Aborted => {
-            println!("\nServer stopped");
-        }
-    }
-    Ok(())
-}
-
-async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Context> {
-    match (&common.ip, &common.device) {
-        (Some(ip), None) => {
-            // TCP connection
-            let socket_addr = SocketAddr::new(*ip, common.port);
-            if common.verbose {
-                println!(
-                    "Connecting to Modbus TCP server at {ip}:{} (Unit ID: {})...",
-                    common.port, common.unit
-                );
-            }
-
-            match client::tcp::connect(socket_addr).await {
-                Ok(mut ctx) => {
-                    ctx.set_slave(Slave(common.unit));
-                    if common.verbose {
-                        println!(
-                            "Successfully connected to Modbus TCP server at {ip}:{}",
-                            common.port
-                        );
-                    }
-                    Ok(ctx)
-                }
-                Err(e) => {
-                    eprintln!("Failed to connect to {ip}:{} - Error: {e}", common.port);
-                    Err(e.into())
-                }
-            }
-        }
-        (None, Some(device)) => {
-            // RTU connection
-            if common.verbose {
-                println!(
-                    "Connecting to Modbus RTU device at {} (Baud: {}, Unit ID: {})...",
-                    device.display(),
-                    common.baud,
-                    common.unit
-                );
-            }
-
-            match tokio_serial::SerialStream::open(&tokio_serial::new(
-                device.to_string_lossy(),
-                common.baud,
-            )) {
-                Ok(mut serial) => {
-                    // Disable exclusive access for virtual ports
-                    if let Err(e) = serial.set_exclusive(false) {
-                        if common.verbose {
-                            println!("Warning: Could not disable exclusive access: {e}");
-                        }
-                    }
-                    let ctx = client::rtu::attach_slave(serial, Slave(common.unit));
-                    if common.verbose {
-                        println!(
-                            "Successfully connected to Modbus RTU device at {}",
-                            device.display()
-                        );
-                    }
-                    Ok(ctx)
-                }
-                Err(e) => {
-                    eprintln!("Failed to connect to {} - Error: {e}", device.display());
-                    Err(e.into())
-                }
-            }
-        }
-        (None, None) => Err(anyhow::anyhow!(
-            "Must specify either --ip for TCP or --device for RTU"
-        )),
-        (Some(_), Some(_)) => Err(anyhow::anyhow!("Cannot specify both --ip and --device")),
-    }
-}
+use clap::Parser;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -576,19 +21,21 @@ async fn main() -> anyhow::Result<()> {
         Command::Read { area } => match area {
             ReadArea::Coil { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-                let coils =
-                    handle_modbus_response(client.read_coils(start, qty).await, "read coils")
-                        .await?;
+                let coils = modbus_operation_with_timeout(
+                    || client.read_coils(start, qty),
+                    "read coils",
+                    common.timeout,
+                ).await?;
                 println!("Read {} coil(s) (Unit ID: {}):", coils.len(), common.unit);
                 print_coil_table(&coils, start);
             }
             ReadArea::Discrete { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-                let inputs = handle_modbus_response(
-                    client.read_discrete_inputs(start, qty).await,
+                let inputs = modbus_operation_with_timeout(
+                    || client.read_discrete_inputs(start, qty),
                     "read discrete inputs",
-                )
-                .await?;
+                    common.timeout,
+                ).await?;
                 println!(
                     "Read {} discrete input(s) (Unit ID: {}):",
                     inputs.len(),
@@ -598,11 +45,11 @@ async fn main() -> anyhow::Result<()> {
             }
             ReadArea::Holding { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-                let registers = handle_modbus_response(
-                    client.read_holding_registers(start, qty).await,
+                let registers = modbus_operation_with_timeout(
+                    || client.read_holding_registers(start, qty),
                     "read holding registers",
-                )
-                .await?;
+                    common.timeout,
+                ).await?;
                 println!(
                     "Read {} holding register(s) (Unit ID: {}):",
                     registers.len(),
@@ -612,11 +59,11 @@ async fn main() -> anyhow::Result<()> {
             }
             ReadArea::Input { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-                let registers = handle_modbus_response(
-                    client.read_input_registers(start, qty).await,
+                let registers = modbus_operation_with_timeout(
+                    || client.read_input_registers(start, qty),
                     "read input registers",
-                )
-                .await?;
+                    common.timeout,
+                ).await?;
                 println!(
                     "Read {} input register(s) (Unit ID: {}):",
                     registers.len(),
@@ -639,11 +86,11 @@ async fn main() -> anyhow::Result<()> {
 
                 if bool_values.len() == 1 {
                     // Single coil write (FC 5)
-                    handle_modbus_response(
-                        client.write_single_coil(start, bool_values[0]).await,
+                    modbus_operation_with_timeout(
+                        || client.write_single_coil(start, bool_values[0]),
                         "write coil",
-                    )
-                    .await?;
+                        common.timeout,
+                    ).await?;
                     println!(
                         "Wrote coil at address {start} with value {} (Unit ID: {})",
                         if bool_values[0] { "ON" } else { "OFF" },
@@ -651,11 +98,11 @@ async fn main() -> anyhow::Result<()> {
                     );
                 } else {
                     // Multiple coils write (FC 15)
-                    handle_modbus_response(
-                        client.write_multiple_coils(start, &bool_values).await,
+                    modbus_operation_with_timeout(
+                        || client.write_multiple_coils(start, &bool_values),
                         "write coils",
-                    )
-                    .await?;
+                        common.timeout,
+                    ).await?;
                     println!(
                         "Wrote {} coil(s) starting at address {} (Unit ID: {})",
                         bool_values.len(),
@@ -674,11 +121,11 @@ async fn main() -> anyhow::Result<()> {
 
                 if values.len() == 1 {
                     // Single register write (FC 6)
-                    handle_modbus_response(
-                        client.write_single_register(start, values[0]).await,
+                    modbus_operation_with_timeout(
+                        || client.write_single_register(start, values[0]),
                         "write register",
-                    )
-                    .await?;
+                        common.timeout,
+                    ).await?;
                     if common.verbose {
                         println!(
                             "Wrote holding register at address {} with value {} (0x{:04X}) (Unit ID: {})",
@@ -692,11 +139,11 @@ async fn main() -> anyhow::Result<()> {
                     }
                 } else {
                     // Multiple registers write (FC 16)
-                    handle_modbus_response(
-                        client.write_multiple_registers(start, &values).await,
+                    modbus_operation_with_timeout(
+                        || client.write_multiple_registers(start, &values),
                         "write registers",
-                    )
-                    .await?;
+                        common.timeout,
+                    ).await?;
                     println!(
                         "Wrote {} holding register(s) starting at address {} (Unit ID: {})",
                         values.len(),
@@ -767,50 +214,12 @@ async fn main() -> anyhow::Result<()> {
                     // RTU Server
                     println!("Starting Modbus RTU server on {}", device_path.display());
                     print_config();
-
-                    println!("Using baud rate: {baud}");
-
-                    match tokio_serial::SerialStream::open(&tokio_serial::new(
-                        device_path.to_string_lossy(),
-                        baud,
-                    )) {
-                        Ok(mut serial) => {
-                            // Disable exclusive access for virtual ports
-                            if let Err(e) = serial.set_exclusive(false) {
-                                println!("Warning: Could not disable exclusive access: {e}");
-                            }
-
-                            let rtu_server = rtu::Server::new(serial);
-                            let service = ModbusService::new(data);
-                            println!("Modbus RTU server listening on {}", device_path.display());
-                            println!("Press Ctrl+C to stop the server");
-
-                            let serve_task =
-                                tokio::spawn(
-                                    async move { rtu_server.serve_forever(service).await },
-                                );
-
-                            // Wait for Ctrl+C
-                            tokio::signal::ctrl_c().await?;
-                            println!("\nStopping RTU server...");
-
-                            // Abort the serve task
-                            serve_task.abort();
-                            println!("RTU server stopped");
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "Failed to open serial device {}: {}",
-                                device_path.display(),
-                                e
-                            );
-                            return Err(e.into());
-                        }
-                    }
+                    run_rtu_server(&device_path, baud, data).await?;
                 }
                 (None, None) => {
                     // Default to TCP on 0.0.0.0:502
-                    let ip_addr = IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0));
+                    use std::net::{IpAddr, Ipv4Addr};
+                    let ip_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
                     println!("Starting Modbus TCP server on {ip_addr}:{port} (default)");
                     print_config();
                     run_tcp_server(ip_addr, port, data).await?;
