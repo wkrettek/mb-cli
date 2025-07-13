@@ -1,6 +1,6 @@
 # mb-cli
 
-A blazing fast, reliable Modbus TCP and RTU client and server command-line tool built on top of [tokio-modbus](https://github.com/slowtec/tokio-modbus) in Rust.
+A fast and reliable Modbus TCP and RTU client/server command-line tool. Built on top of [tokio-modbus](https://github.com/slowtec/tokio-modbus).
 
 ## Features
 
@@ -124,7 +124,7 @@ mb server [connection options] [memory options]
 ```
 
 Memory options:
-- `--num-coils <count>` - Number of coils (default: 10000)  
+- `--num-coils <count>` - Number of coils (default: 10000)
 - `--num-discrete <count>` - Number of discrete inputs (default: 10000)
 - `--num-holding <count>` - Number of holding registers (default: 10000)
 - `--num-input <count>` - Number of input registers (default: 10000)
@@ -134,7 +134,7 @@ Memory options:
 The tool automatically detects the protocol based on arguments:
 
 - `--ip` specified → Modbus TCP
-- `--device` specified → Modbus RTU  
+- `--device` specified → Modbus RTU
 - Both specified → Error (mutually exclusive)
 - Neither specified → Error (must specify one)
 
