@@ -243,7 +243,7 @@ impl Service for ModbusService {
         let response = match req {
             Request::ReadCoils(addr, qty) => {
                 // Note: We don't have access to client IP in the service layer
-                println!("Read {} coil(s) starting at {}", qty, addr);
+                println!("Read {qty} coil(s) starting at {addr}");
                 let start = addr as usize;
                 let end = start + qty as usize;
                 if end <= data.coils.len() {
@@ -254,7 +254,7 @@ impl Service for ModbusService {
                 }
             }
             Request::ReadDiscreteInputs(addr, qty) => {
-                println!("Read {} discrete input(s) starting at {}", qty, addr);
+                println!("Read {qty} discrete input(s) starting at {addr}");
                 let start = addr as usize;
                 let end = start + qty as usize;
                 if end <= data.discrete_inputs.len() {
@@ -265,7 +265,7 @@ impl Service for ModbusService {
                 }
             }
             Request::ReadHoldingRegisters(addr, qty) => {
-                println!("Read {} holding register(s) starting at {}", qty, addr);
+                println!("Read {qty} holding register(s) starting at {addr}");
                 let start = addr as usize;
                 let end = start + qty as usize;
                 if end <= data.holding_registers.len() {
@@ -276,7 +276,7 @@ impl Service for ModbusService {
                 }
             }
             Request::ReadInputRegisters(addr, qty) => {
-                println!("Read {} input register(s) starting at {}", qty, addr);
+                println!("Read {qty} input register(s) starting at {addr}");
                 let start = addr as usize;
                 let end = start + qty as usize;
                 if end <= data.input_registers.len() {
@@ -358,9 +358,9 @@ fn print_register_table(registers: &[u16], start_addr: u16, verbose: bool) {
     for (i, &value) in registers.iter().enumerate() {
         let addr = start_addr + i as u16;
         if verbose {
-            println!("{:<8} {:<6} 0x{:04X}", addr, value, value);
+            println!("{addr:<8} {value:<6} 0x{value:04X}");
         } else {
-            println!("{:<8} {:<6}", addr, value);
+            println!("{addr:<8} {value:<6}");
         }
     }
 }
