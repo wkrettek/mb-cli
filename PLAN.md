@@ -25,10 +25,10 @@
 ## Next: High Priority
 
 ## Critical Correctness Fixes: High Priority
-- [ ] **RTU serial port opening**: Replace blocking `SerialStream::open()` with async version for cross-platform compatibility
-- [ ] **RTU server unit ID**: Fix hard-coded slave=1 in RTU server to use actual unit parameter
+- [x] **RTU serial port opening**: ~~Replace blocking `SerialStream::open()` with async version~~ (Won't do - current API is correct)
+- [x] **RTU server unit ID**: ~~Fix hard-coded slave=1 in RTU server~~ (Won't do - no hard-coded slave found)
 - [x] **Async-safe Mutex**: Replace `std::sync::Mutex` with `tokio::sync::RwLock` to prevent blocking async runtime
-- [ ] **Coil value parsing**: Change from accepting any `u16` to proper `bool` parsing to catch user typos
+- [x] **Coil value parsing**: ~~Change from accepting any `u16` to proper `bool` parsing~~ (Won't do - being permissive is better)
 
 ## Usability Improvements: Medium Priority  
 - [ ] **Range validation**: Add Clap range validation for qty (coils: 1-2000, registers: 1-125)

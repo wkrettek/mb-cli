@@ -8,6 +8,37 @@ use tokio_modbus::client::{Reader, Writer};
 use tokio_modbus::prelude::*;
 use tokio_modbus::server::{Service, rtu, tcp::Server};
 
+// Custom validation functions for Modbus specification limits
+fn validate_coil_qty(s: &str) -> Result<u16, String> {
+    let qty: u16 = s
+        .parse()
+        .map_err(|_| format!("Invalid quantity '{}': must be a number", s))?;
+
+    if qty < 1 || qty > 2000 {
+        Err(format!(
+            "Invalid quantity {}: Modbus specification limits coil operations to 1-2000 coils per request (FC 01/05/15)",
+            qty
+        ))
+    } else {
+        Ok(qty)
+    }
+}
+
+fn validate_register_qty(s: &str) -> Result<u16, String> {
+    let qty: u16 = s
+        .parse()
+        .map_err(|_| format!("Invalid quantity '{}': must be a number", s))?;
+
+    if qty < 1 || qty > 125 {
+        Err(format!(
+            "Invalid quantity {}: Modbus specification limits register operations to 1-125 registers per request (FC 03/04/06/16)",
+            qty
+        ))
+    } else {
+        Ok(qty)
+    }
+}
+
 /// Flags common to every subcommand
 #[derive(Debug, clap::Args)]
 struct Common {
@@ -114,8 +145,8 @@ enum ReadArea {
         /// Starting address
         #[arg(long = "addr")]
         start: u16,
-        /// Quantity (default 1)
-        #[arg(long = "qty", default_value_t = 1)]
+        /// Quantity (default 1, max 2000)
+        #[arg(long = "qty", default_value_t = 1, value_parser = validate_coil_qty)]
         qty: u16,
         #[command(flatten)]
         common: Common,
@@ -125,8 +156,8 @@ enum ReadArea {
         /// Starting address
         #[arg(long = "addr")]
         start: u16,
-        /// Quantity (default 1)
-        #[arg(long = "qty", default_value_t = 1)]
+        /// Quantity (default 1, max 2000)
+        #[arg(long = "qty", default_value_t = 1, value_parser = validate_coil_qty)]
         qty: u16,
         #[command(flatten)]
         common: Common,
@@ -136,8 +167,8 @@ enum ReadArea {
         /// Starting address
         #[arg(long = "addr")]
         start: u16,
-        /// Quantity (default 1)
-        #[arg(long = "qty", default_value_t = 1)]
+        /// Quantity (default 1, max 125)
+        #[arg(long = "qty", default_value_t = 1, value_parser = validate_register_qty)]
         qty: u16,
         #[command(flatten)]
         common: Common,
@@ -147,8 +178,8 @@ enum ReadArea {
         /// Starting address
         #[arg(long = "addr")]
         start: u16,
-        /// Quantity (default 1)
-        #[arg(long = "qty", default_value_t = 1)]
+        /// Quantity (default 1, max 125)
+        #[arg(long = "qty", default_value_t = 1, value_parser = validate_register_qty)]
         qty: u16,
         #[command(flatten)]
         common: Common,
@@ -227,110 +258,112 @@ impl Service for ModbusService {
     type Request = Request<'static>;
     type Response = Response;
     type Exception = ExceptionCode;
-    type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Exception>> + Send>>;
+    type Future = std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Exception>> + Send>,
+    >;
 
     fn call(&self, req: Self::Request) -> Self::Future {
         let data = self.data.clone();
         Box::pin(async move {
             let mut data = data.write().await;
 
-        let response = match req {
-            Request::ReadCoils(addr, qty) => {
-                // Note: We don't have access to client IP in the service layer
-                println!("Read {qty} coil(s) starting at {addr}");
-                let start = addr as usize;
-                let end = start + qty as usize;
-                if end <= data.coils.len() {
-                    let coils = data.coils[start..end].to_vec();
-                    Response::ReadCoils(coils)
-                } else {
-                    return Err(ExceptionCode::IllegalDataAddress);
-                }
-            }
-            Request::ReadDiscreteInputs(addr, qty) => {
-                println!("Read {qty} discrete input(s) starting at {addr}");
-                let start = addr as usize;
-                let end = start + qty as usize;
-                if end <= data.discrete_inputs.len() {
-                    let inputs = data.discrete_inputs[start..end].to_vec();
-                    Response::ReadDiscreteInputs(inputs)
-                } else {
-                    return Err(ExceptionCode::IllegalDataAddress);
-                }
-            }
-            Request::ReadHoldingRegisters(addr, qty) => {
-                println!("Read {qty} holding register(s) starting at {addr}");
-                let start = addr as usize;
-                let end = start + qty as usize;
-                if end <= data.holding_registers.len() {
-                    let registers = data.holding_registers[start..end].to_vec();
-                    Response::ReadHoldingRegisters(registers)
-                } else {
-                    return Err(ExceptionCode::IllegalDataAddress);
-                }
-            }
-            Request::ReadInputRegisters(addr, qty) => {
-                println!("Read {qty} input register(s) starting at {addr}");
-                let start = addr as usize;
-                let end = start + qty as usize;
-                if end <= data.input_registers.len() {
-                    let registers = data.input_registers[start..end].to_vec();
-                    Response::ReadInputRegisters(registers)
-                } else {
-                    return Err(ExceptionCode::IllegalDataAddress);
-                }
-            }
-            Request::WriteSingleCoil(addr, value) => {
-                let addr = addr as usize;
-                if addr < data.coils.len() {
-                    println!("Write coil {addr}: {value}");
-                    data.coils[addr] = value;
-                    Response::WriteSingleCoil(addr as u16, value)
-                } else {
-                    return Err(ExceptionCode::IllegalDataAddress);
-                }
-            }
-            Request::WriteSingleRegister(addr, value) => {
-                let addr = addr as usize;
-                if addr < data.holding_registers.len() {
-                    println!("Write register {addr}: {value}");
-                    data.holding_registers[addr] = value;
-                    Response::WriteSingleRegister(addr as u16, value)
-                } else {
-                    return Err(ExceptionCode::IllegalDataAddress);
-                }
-            }
-            Request::WriteMultipleCoils(addr, values) => {
-                let start = addr as usize;
-                let end = start + values.len();
-                if end <= data.coils.len() {
-                    println!("Write {} coils starting at {addr}", values.len());
-                    for (i, &value) in values.iter().enumerate() {
-                        data.coils[start + i] = value;
+            let response = match req {
+                Request::ReadCoils(addr, qty) => {
+                    // Note: We don't have access to client IP in the service layer
+                    println!("Read {qty} coil(s) starting at {addr}");
+                    let start = addr as usize;
+                    let end = start + qty as usize;
+                    if end <= data.coils.len() {
+                        let coils = data.coils[start..end].to_vec();
+                        Response::ReadCoils(coils)
+                    } else {
+                        return Err(ExceptionCode::IllegalDataAddress);
                     }
-                    Response::WriteMultipleCoils(addr, values.len() as u16)
-                } else {
-                    return Err(ExceptionCode::IllegalDataAddress);
                 }
-            }
-            Request::WriteMultipleRegisters(addr, values) => {
-                let start = addr as usize;
-                let end = start + values.len();
-                if end <= data.holding_registers.len() {
-                    println!("Write {} registers starting at {addr}", values.len());
-                    for (i, &value) in values.iter().enumerate() {
-                        data.holding_registers[start + i] = value;
+                Request::ReadDiscreteInputs(addr, qty) => {
+                    println!("Read {qty} discrete input(s) starting at {addr}");
+                    let start = addr as usize;
+                    let end = start + qty as usize;
+                    if end <= data.discrete_inputs.len() {
+                        let inputs = data.discrete_inputs[start..end].to_vec();
+                        Response::ReadDiscreteInputs(inputs)
+                    } else {
+                        return Err(ExceptionCode::IllegalDataAddress);
                     }
-                    Response::WriteMultipleRegisters(addr, values.len() as u16)
-                } else {
-                    return Err(ExceptionCode::IllegalDataAddress);
                 }
-            }
-            _ => {
-                return Err(ExceptionCode::IllegalFunction);
-            }
-        };
-        Ok(response)
+                Request::ReadHoldingRegisters(addr, qty) => {
+                    println!("Read {qty} holding register(s) starting at {addr}");
+                    let start = addr as usize;
+                    let end = start + qty as usize;
+                    if end <= data.holding_registers.len() {
+                        let registers = data.holding_registers[start..end].to_vec();
+                        Response::ReadHoldingRegisters(registers)
+                    } else {
+                        return Err(ExceptionCode::IllegalDataAddress);
+                    }
+                }
+                Request::ReadInputRegisters(addr, qty) => {
+                    println!("Read {qty} input register(s) starting at {addr}");
+                    let start = addr as usize;
+                    let end = start + qty as usize;
+                    if end <= data.input_registers.len() {
+                        let registers = data.input_registers[start..end].to_vec();
+                        Response::ReadInputRegisters(registers)
+                    } else {
+                        return Err(ExceptionCode::IllegalDataAddress);
+                    }
+                }
+                Request::WriteSingleCoil(addr, value) => {
+                    let addr = addr as usize;
+                    if addr < data.coils.len() {
+                        println!("Write coil {addr}: {value}");
+                        data.coils[addr] = value;
+                        Response::WriteSingleCoil(addr as u16, value)
+                    } else {
+                        return Err(ExceptionCode::IllegalDataAddress);
+                    }
+                }
+                Request::WriteSingleRegister(addr, value) => {
+                    let addr = addr as usize;
+                    if addr < data.holding_registers.len() {
+                        println!("Write register {addr}: {value}");
+                        data.holding_registers[addr] = value;
+                        Response::WriteSingleRegister(addr as u16, value)
+                    } else {
+                        return Err(ExceptionCode::IllegalDataAddress);
+                    }
+                }
+                Request::WriteMultipleCoils(addr, values) => {
+                    let start = addr as usize;
+                    let end = start + values.len();
+                    if end <= data.coils.len() {
+                        println!("Write {} coils starting at {addr}", values.len());
+                        for (i, &value) in values.iter().enumerate() {
+                            data.coils[start + i] = value;
+                        }
+                        Response::WriteMultipleCoils(addr, values.len() as u16)
+                    } else {
+                        return Err(ExceptionCode::IllegalDataAddress);
+                    }
+                }
+                Request::WriteMultipleRegisters(addr, values) => {
+                    let start = addr as usize;
+                    let end = start + values.len();
+                    if end <= data.holding_registers.len() {
+                        println!("Write {} registers starting at {addr}", values.len());
+                        for (i, &value) in values.iter().enumerate() {
+                            data.holding_registers[start + i] = value;
+                        }
+                        Response::WriteMultipleRegisters(addr, values.len() as u16)
+                    } else {
+                        return Err(ExceptionCode::IllegalDataAddress);
+                    }
+                }
+                _ => {
+                    return Err(ExceptionCode::IllegalFunction);
+                }
+            };
+            Ok(response)
         })
     }
 }
@@ -416,11 +449,9 @@ async fn run_tcp_server(
         let service = service.clone();
         async move {
             println!("Client connected: {socket_addr}");
-            tokio_modbus::server::tcp::accept_tcp_connection(
-                stream,
-                socket_addr,
-                |_| Ok(Some(service.clone())),
-            )
+            tokio_modbus::server::tcp::accept_tcp_connection(stream, socket_addr, |_| {
+                Ok(Some(service.clone()))
+            })
         }
     };
 
@@ -527,26 +558,52 @@ async fn main() -> anyhow::Result<()> {
         Command::Read { area } => match area {
             ReadArea::Coil { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-                let coils = handle_modbus_response(client.read_coils(start, qty).await, "read coils").await?;
+                let coils =
+                    handle_modbus_response(client.read_coils(start, qty).await, "read coils")
+                        .await?;
                 println!("Read {} coil(s) (Unit ID: {}):", coils.len(), common.unit);
                 print_coil_table(&coils, start);
             }
             ReadArea::Discrete { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-                let inputs = handle_modbus_response(client.read_discrete_inputs(start, qty).await, "read discrete inputs").await?;
-                println!("Read {} discrete input(s) (Unit ID: {}):", inputs.len(), common.unit);
+                let inputs = handle_modbus_response(
+                    client.read_discrete_inputs(start, qty).await,
+                    "read discrete inputs",
+                )
+                .await?;
+                println!(
+                    "Read {} discrete input(s) (Unit ID: {}):",
+                    inputs.len(),
+                    common.unit
+                );
                 print_coil_table(&inputs, start);
             }
             ReadArea::Holding { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-                let registers = handle_modbus_response(client.read_holding_registers(start, qty).await, "read holding registers").await?;
-                println!("Read {} holding register(s) (Unit ID: {}):", registers.len(), common.unit);
+                let registers = handle_modbus_response(
+                    client.read_holding_registers(start, qty).await,
+                    "read holding registers",
+                )
+                .await?;
+                println!(
+                    "Read {} holding register(s) (Unit ID: {}):",
+                    registers.len(),
+                    common.unit
+                );
                 print_register_table(&registers, start, common.verbose);
             }
             ReadArea::Input { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-                let registers = handle_modbus_response(client.read_input_registers(start, qty).await, "read input registers").await?;
-                println!("Read {} input register(s) (Unit ID: {}):", registers.len(), common.unit);
+                let registers = handle_modbus_response(
+                    client.read_input_registers(start, qty).await,
+                    "read input registers",
+                )
+                .await?;
+                println!(
+                    "Read {} input register(s) (Unit ID: {}):",
+                    registers.len(),
+                    common.unit
+                );
                 print_register_table(&registers, start, common.verbose);
             }
         },
@@ -564,7 +621,11 @@ async fn main() -> anyhow::Result<()> {
 
                 if bool_values.len() == 1 {
                     // Single coil write (FC 5)
-                    handle_modbus_response(client.write_single_coil(start, bool_values[0]).await, "write coil").await?;
+                    handle_modbus_response(
+                        client.write_single_coil(start, bool_values[0]).await,
+                        "write coil",
+                    )
+                    .await?;
                     println!(
                         "Wrote coil at address {start} with value {} (Unit ID: {})",
                         if bool_values[0] { "ON" } else { "OFF" },
@@ -572,7 +633,11 @@ async fn main() -> anyhow::Result<()> {
                     );
                 } else {
                     // Multiple coils write (FC 15)
-                    handle_modbus_response(client.write_multiple_coils(start, &bool_values).await, "write coils").await?;
+                    handle_modbus_response(
+                        client.write_multiple_coils(start, &bool_values).await,
+                        "write coils",
+                    )
+                    .await?;
                     println!(
                         "Wrote {} coil(s) starting at address {} (Unit ID: {})",
                         bool_values.len(),
@@ -591,7 +656,11 @@ async fn main() -> anyhow::Result<()> {
 
                 if values.len() == 1 {
                     // Single register write (FC 6)
-                    handle_modbus_response(client.write_single_register(start, values[0]).await, "write register").await?;
+                    handle_modbus_response(
+                        client.write_single_register(start, values[0]).await,
+                        "write register",
+                    )
+                    .await?;
                     if common.verbose {
                         println!(
                             "Wrote holding register at address {} with value {} (0x{:04X}) (Unit ID: {})",
@@ -605,7 +674,11 @@ async fn main() -> anyhow::Result<()> {
                     }
                 } else {
                     // Multiple registers write (FC 16)
-                    handle_modbus_response(client.write_multiple_registers(start, &values).await, "write registers").await?;
+                    handle_modbus_response(
+                        client.write_multiple_registers(start, &values).await,
+                        "write registers",
+                    )
+                    .await?;
                     println!(
                         "Wrote {} holding register(s) starting at address {} (Unit ID: {})",
                         values.len(),
