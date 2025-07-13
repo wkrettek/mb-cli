@@ -26,14 +26,30 @@
 
 ## Before Publishing: Medium Priority
 - [ ] Clean up cli output
-    - [ ] cli
+    - [x] cli
     - [x] Hide more detail behind --verbose/-v
     - Maybe print a table of results?
-    - [ ] server
-        - [ ] print the action and from where
+    - [x] server
+        - [ ] print the action and from where (do later)
 - [ ] Lint and cleanup
-    - [ ] Use DRY where possible
-    - [ ] Break into multiple files
+    - [ ] DRY violations:
+        - [ ] Extract common read operation error handling (4x duplication)
+        - [ ] Extract common write operation error handling (2x duplication) 
+        - [ ] Extract TCP server setup (2x duplication)
+        - [ ] Create error handling utilities
+    - [ ] Function length:
+        - [ ] Break down 411-line main() function
+        - [ ] Extract server command handling
+    - [ ] Break into multiple files:
+        - [ ] cli.rs - CLI structs and parsing
+        - [ ] client.rs - Client connection and operations
+        - [ ] server.rs - Server implementation  
+        - [ ] table.rs - Table formatting
+        - [ ] main.rs - Just orchestration
+    - [ ] Remove dead code:
+        - [ ] Remove unused `format` field from Common struct
+        - [ ] Remove unused server variables (_unit, _verbose)
+    - [ ] Add constants for magic numbers (ports, baud rates)
     - [ ] Get multiple AI reviews
         - [ ] o3
         - [ ] gemini
@@ -43,11 +59,24 @@
         - inputs and discretes are not writeable
     - [ ] Timeout configuration
 - [ ] Add tests for all functionality
+    - [ ] Basic integration tests (server on port 5020):
+        - [ ] Server startup and shutdown
+        - [ ] Read operations (coils, discrete, holding, input registers)
+        - [ ] Single writes (coil, holding register)
+        - [ ] Multiple writes (coils, holding registers)
+        - [ ] Table output formatting
+        - [ ] Verbose mode behavior
+        - [ ] Failure cases:
+            - [ ] Address out of range (IllegalDataAddress exception)
+            - [ ] Write to read-only areas (IllegalFunction exception)
+            - [ ] Connection to non-existent server
+            - [ ] CLI validation (missing args, conflicting args)
     - [ ] Unit tests for parsing
-    - [ ] Integration tests for client operations
     - [ ] Mock server tests
 - [ ] Create comprehensive documentation and examples
     - [ ] README with usage examples
+        - Installation
+            - cargo install
     - [ ] Example scripts
 - [ ] Package and publish
     - [ ] Cargo.toml metadata for publishing

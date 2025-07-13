@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, arg};
+use clap::{Parser, Subcommand};
 use std::{
     future,
     net::{IpAddr, SocketAddr},
@@ -32,9 +32,6 @@ struct Common {
     #[arg(long, default_value_t = 0)]
     unit: u8,
 
-    /// Optional CSV scaling/metadata file
-    #[arg(long)]
-    format: Option<PathBuf>,
 
     /// Verbose output
     #[arg(long, short)]
@@ -677,12 +674,12 @@ async fn main() -> anyhow::Result<()> {
             device,
             port,
             baud,
-            unit: _unit,
+            unit,
             num_coils,
             num_discrete,
             num_holding,
             num_input,
-            verbose: _verbose,
+            verbose,
         } => {
             // Auto-detect TCP vs RTU based on arguments
             // Create shared data storage
