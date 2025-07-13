@@ -1,6 +1,6 @@
 # mb-cli
 
-A blazing fast, reliable Modbus TCP and RTU client and server command-line tool built in Rust.
+A blazing fast, reliable Modbus TCP and RTU client and server command-line tool built on top of [tokio-modbus](https://github.com/slowtec/tokio-modbus) in Rust.
 
 ## Features
 
