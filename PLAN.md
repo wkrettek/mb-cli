@@ -10,15 +10,19 @@
     - [x] Handle read/write requests from clients
     - [x] Manual verification of all read/write TCP functionality
 
+- [x] Add support for Modbus RTU (serial) in addition to TCP
+    - [x] Add serial port dependencies (tokio-serial)
+    - [x] Add --device flag for serial port selection
+    - [x] Implement RTU connection logic
+    - [x] Add --baud flag for RTU baud rate configuration
+    - [x] Handle exclusive access for virtual serial ports
+- [x] Implement auto-detection for TCP vs RTU based on --ip or --device flags
+    - [x] Make --ip and --device mutually exclusive
+    - [x] Auto-select TCP when --ip is provided
+    - [x] Auto-select RTU when --device is provided
+    - [x] Manual verification of RTU read/write functionality
+
 ## Next: High Priority
-- [ ] Add support for Modbus RTU (serial) in addition to TCP
-    - [ ] Add serial port dependencies (tokio-serial)
-    - [ ] Add --device flag for serial port selection
-    - [ ] Implement RTU connection logic
-- [ ] Implement auto-detection for TCP vs RTU based on --ip or --device flags
-    - [ ] Make --ip and --device mutually exclusive
-    - [ ] Auto-select TCP when --ip is provided
-    - [ ] Auto-select RTU when --device is provided
 
 ## Before Publishing: Medium Priority
 - [ ] Clean up cli output
@@ -36,6 +40,7 @@
 - [ ] Add comprehensive error handling and retry logic
     - [ ] Implement connection retry with backoff
     - [ ] Very good error messages for common issues
+        - inputs and discretes are not writeable
     - [ ] Timeout configuration
 - [ ] Add tests for all functionality
     - [ ] Unit tests for parsing

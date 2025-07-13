@@ -35,6 +35,10 @@ struct Common {
     /// Optional CSV scaling/metadata file
     #[arg(long)]
     format: Option<PathBuf>,
+
+    /// Verbose output
+    #[arg(long, short)]
+    verbose: bool,
 }
 
 /// CLI entry point
@@ -111,7 +115,7 @@ enum Command {
 #[derive(Subcommand, Debug)]
 enum ReadArea {
     /// Read Coils (FC 1)
-    Coils {
+    Coil {
         /// Starting address
         #[arg(long = "addr")]
         start: u16,
@@ -159,7 +163,7 @@ enum ReadArea {
 #[derive(Subcommand, Debug)]
 enum WriteArea {
     /// Write Single/Multiple Coils (FC 5/15)
-    Coils {
+    Coil {
         /// Starting address
         #[arg(long = "addr")]
         start: u16,
@@ -338,37 +342,47 @@ async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Context> {
         (Some(ip), None) => {
             // TCP connection
             let socket_addr = SocketAddr::new(*ip, common.port);
-            println!("Connecting to Modbus TCP server at {ip}:{} (Unit ID: {})...", common.port, common.unit);
+            if common.verbose {
+                println!("Connecting to Modbus TCP server at {ip}:{} (Unit ID: {})...", common.port, common.unit);
+            }
 
             match client::tcp::connect(socket_addr).await {
                 Ok(mut ctx) => {
                     ctx.set_slave(Slave(common.unit));
-                    println!("Successfully connected to Modbus TCP server at {ip}:{}", common.port);
+                    if common.verbose {
+                        println!("Successfully connected to Modbus TCP server at {ip}:{}", common.port);
+                    }
                     Ok(ctx)
                 }
                 Err(e) => {
-                    println!("Failed to connect to {ip}:{} - Error: {e}", common.port);
+                    eprintln!("Failed to connect to {ip}:{} - Error: {e}", common.port);
                     Err(e.into())
                 }
             }
         }
         (None, Some(device)) => {
             // RTU connection
-            println!("Connecting to Modbus RTU device at {} (Baud: {}, Unit ID: {})...", 
-                     device.display(), common.baud, common.unit);
+            if common.verbose {
+                println!("Connecting to Modbus RTU device at {} (Baud: {}, Unit ID: {})...", 
+                         device.display(), common.baud, common.unit);
+            }
 
             match tokio_serial::SerialStream::open(&tokio_serial::new(device.to_string_lossy(), common.baud)) {
                 Ok(mut serial) => {
                     // Disable exclusive access for virtual ports
                     if let Err(e) = serial.set_exclusive(false) {
-                        println!("Warning: Could not disable exclusive access: {e}");
+                        if common.verbose {
+                            println!("Warning: Could not disable exclusive access: {e}");
+                        }
                     }
                     let ctx = client::rtu::attach_slave(serial, Slave(common.unit));
-                    println!("Successfully connected to Modbus RTU device at {}", device.display());
+                    if common.verbose {
+                        println!("Successfully connected to Modbus RTU device at {}", device.display());
+                    }
                     Ok(ctx)
                 }
                 Err(e) => {
-                    println!("Failed to connect to {} - Error: {e}", device.display());
+                    eprintln!("Failed to connect to {} - Error: {e}", device.display());
                     Err(e.into())
                 }
             }
@@ -388,17 +402,13 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.cmd {
         Command::Read { area } => match area {
-            ReadArea::Coils { start, qty, common } => {
-                println!(
-                    "Reading coil at address {} (Unit ID: {})",
-                    start, common.unit
-                );
+            ReadArea::Coil { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
 
                 match client.read_coils(start, qty).await {
                     Ok(response) => match response {
                         Ok(coils) => {
-                            println!("Successfully read {} coil(s):", coils.len());
+                            println!("Read {} coil(s) (Unit ID: {}):", coils.len(), common.unit);
                             for (i, value) in coils.iter().enumerate() {
                                 let addr = start + i as u16;
                                 println!(
@@ -420,16 +430,12 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             ReadArea::Discrete { start, qty, common } => {
-                println!(
-                    "Reading discrete input at address {} (Unit ID: {})",
-                    start, common.unit
-                );
                 let mut client = connect_to_modbus(&common).await?;
 
                 match client.read_discrete_inputs(start, qty).await {
                     Ok(response) => match response {
                         Ok(inputs) => {
-                            println!("Successfully read {} discrete input(s):", inputs.len());
+                            println!("Read {} discrete input(s) (Unit ID: {}):", inputs.len(), common.unit);
                             for (i, value) in inputs.iter().enumerate() {
                                 let addr = start + i as u16;
                                 println!(
@@ -451,16 +457,12 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             ReadArea::Holding { start, qty, common } => {
-                println!(
-                    "Reading holding register at address {} (Unit ID: {})",
-                    start, common.unit
-                );
                 let mut client = connect_to_modbus(&common).await?;
 
                 match client.read_holding_registers(start, qty).await {
                     Ok(response) => match response {
                         Ok(registers) => {
-                            println!("Successfully read {} holding register(s):", registers.len());
+                            println!("Read {} holding register(s) (Unit ID: {}):", registers.len(), common.unit);
                             for (i, value) in registers.iter().enumerate() {
                                 let addr = start + i as u16;
                                 println!("  Address {addr}: {value} (0x{value:04X})");
@@ -478,16 +480,12 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             ReadArea::Input { start, qty, common } => {
-                println!(
-                    "Reading input register at address {} (Unit ID: {})",
-                    start, common.unit
-                );
                 let mut client = connect_to_modbus(&common).await?;
 
                 match client.read_input_registers(start, qty).await {
                     Ok(response) => match response {
                         Ok(registers) => {
-                            println!("Successfully read {} input register(s):", registers.len());
+                            println!("Read {} input register(s) (Unit ID: {}):", registers.len(), common.unit);
                             for (i, value) in registers.iter().enumerate() {
                                 let addr = start + i as u16;
                                 println!("  Address {addr}: {value} (0x{value:04X})");
@@ -507,7 +505,7 @@ async fn main() -> anyhow::Result<()> {
         },
 
         Command::Write { area } => match area {
-            WriteArea::Coils {
+            WriteArea::Coil {
                 start,
                 values,
                 common,
@@ -528,7 +526,7 @@ async fn main() -> anyhow::Result<()> {
                     match client.write_single_coil(start, bool_values[0]).await {
                         Ok(response) => match response {
                             Ok(_) => {
-                                println!("Successfully wrote coil at address {start}");
+                                println!("Wrote coil at address {start} (Unit ID: {})", common.unit);
                             }
                             Err(exception) => {
                                 eprintln!("Modbus exception response: {exception:?}");
@@ -552,9 +550,10 @@ async fn main() -> anyhow::Result<()> {
                         Ok(response) => match response {
                             Ok(_) => {
                                 println!(
-                                    "Successfully wrote {} coils starting at address {}",
+                                    "Wrote {} coil(s) starting at address {} (Unit ID: {})",
                                     bool_values.len(),
-                                    start
+                                    start,
+                                    common.unit
                                 );
                                 for (i, value) in bool_values.iter().enumerate() {
                                     let addr = start + i as u16;
@@ -594,8 +593,8 @@ async fn main() -> anyhow::Result<()> {
                         Ok(response) => match response {
                             Ok(_) => {
                                 println!(
-                                    "Successfully wrote holding register at address {} with value {} (0x{:04X})",
-                                    start, values[0], values[0]
+                                    "Wrote holding register at address {} with value {} (0x{:04X}) (Unit ID: {})",
+                                    start, values[0], values[0], common.unit
                                 );
                             }
                             Err(exception) => {
@@ -620,9 +619,10 @@ async fn main() -> anyhow::Result<()> {
                         Ok(response) => match response {
                             Ok(_) => {
                                 println!(
-                                    "Successfully wrote {} holding registers starting at address {}",
+                                    "Wrote {} holding registers starting at address {} (Unit ID: {})",
                                     values.len(),
-                                    start
+                                    start,
+                                    common.unit
                                 );
                                 for (i, value) in values.iter().enumerate() {
                                     let addr = start + i as u16;
