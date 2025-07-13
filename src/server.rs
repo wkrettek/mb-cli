@@ -1,7 +1,7 @@
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use tokio_modbus::server::{Service, rtu, tcp::Server};
 use tokio_modbus::prelude::*;
+use tokio_modbus::server::{Service, rtu, tcp::Server};
 
 #[derive(Debug)]
 pub struct ModbusData {
@@ -199,10 +199,8 @@ pub async fn run_rtu_server(
 ) -> anyhow::Result<()> {
     println!("Using baud rate: {baud}");
 
-    match tokio_serial::SerialStream::open(&tokio_serial::new(
-        device_path.to_string_lossy(),
-        baud,
-    )) {
+    match tokio_serial::SerialStream::open(&tokio_serial::new(device_path.to_string_lossy(), baud))
+    {
         Ok(mut serial) => {
             // Disable exclusive access for virtual ports
             if let Err(e) = serial.set_exclusive(false) {
@@ -233,5 +231,185 @@ pub async fn run_rtu_server(
             );
             Err(e.into())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_modbus::prelude::{ExceptionCode, Request, Response};
+
+    #[test]
+    fn test_modbus_data_new() {
+        let data = ModbusData::new(100, 200, 300, 400);
+
+        assert_eq!(data.coils.len(), 100);
+        assert_eq!(data.discrete_inputs.len(), 200);
+        assert_eq!(data.holding_registers.len(), 300);
+        assert_eq!(data.input_registers.len(), 400);
+
+        // All coils and discrete inputs should be false initially
+        assert!(data.coils.iter().all(|&x| !x));
+        assert!(data.discrete_inputs.iter().all(|&x| !x));
+
+        // Holding and input registers should be initialized with address = value
+        for (addr, &value) in data.holding_registers.iter().enumerate() {
+            assert_eq!(addr as u16, value);
+        }
+        for (addr, &value) in data.input_registers.iter().enumerate() {
+            assert_eq!(addr as u16, value);
+        }
+    }
+
+    #[test]
+    fn test_modbus_data_small_sizes() {
+        let data = ModbusData::new(1, 2, 3, 4);
+
+        assert_eq!(data.coils.len(), 1);
+        assert_eq!(data.discrete_inputs.len(), 2);
+        assert_eq!(data.holding_registers.len(), 3);
+        assert_eq!(data.input_registers.len(), 4);
+
+        assert_eq!(data.holding_registers, [0, 1, 2]);
+        assert_eq!(data.input_registers, [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_modbus_data_zero_sizes() {
+        let data = ModbusData::new(0, 0, 0, 0);
+
+        assert!(data.coils.is_empty());
+        assert!(data.discrete_inputs.is_empty());
+        assert!(data.holding_registers.is_empty());
+        assert!(data.input_registers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_modbus_service_read_coils_valid() {
+        let data = Arc::new(tokio::sync::RwLock::new(ModbusData::new(10, 10, 10, 10)));
+
+        // Set some coil values for testing
+        {
+            let mut data_lock = data.write().await;
+            data_lock.coils[0] = true;
+            data_lock.coils[2] = true;
+        }
+
+        let service = ModbusService::new(data);
+        let request = Request::ReadCoils(0, 3);
+
+        let result = service.call(request).await;
+        assert!(result.is_ok());
+
+        if let Ok(Response::ReadCoils(coils)) = result {
+            assert_eq!(coils.len(), 3);
+            assert!(coils[0]);
+            assert!(!coils[1]);
+            assert!(coils[2]);
+        } else {
+            panic!("Expected ReadCoils response");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_modbus_service_read_coils_out_of_bounds() {
+        let data = Arc::new(tokio::sync::RwLock::new(ModbusData::new(5, 5, 5, 5)));
+        let service = ModbusService::new(data);
+
+        // Try to read beyond available coils
+        let request = Request::ReadCoils(3, 5); // starts at 3, wants 5 coils = addresses 3,4,5,6,7 but only 0-4 exist
+
+        let result = service.call(request).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), ExceptionCode::IllegalDataAddress);
+    }
+
+    #[tokio::test]
+    async fn test_modbus_service_read_holding_registers() {
+        let data = Arc::new(tokio::sync::RwLock::new(ModbusData::new(10, 10, 10, 10)));
+        let service = ModbusService::new(data);
+
+        let request = Request::ReadHoldingRegisters(5, 3);
+
+        let result = service.call(request).await;
+        assert!(result.is_ok());
+
+        if let Ok(Response::ReadHoldingRegisters(registers)) = result {
+            assert_eq!(registers.len(), 3);
+            assert_eq!(registers[0], 5); // address 5 = value 5
+            assert_eq!(registers[1], 6); // address 6 = value 6  
+            assert_eq!(registers[2], 7); // address 7 = value 7
+        } else {
+            panic!("Expected ReadHoldingRegisters response");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_modbus_service_write_single_coil() {
+        let data = Arc::new(tokio::sync::RwLock::new(ModbusData::new(10, 10, 10, 10)));
+        let service = ModbusService::new(data.clone());
+
+        let request = Request::WriteSingleCoil(3, true);
+
+        let result = service.call(request).await;
+        assert!(result.is_ok());
+
+        if let Ok(Response::WriteSingleCoil(addr, value)) = result {
+            assert_eq!(addr, 3);
+            assert!(value);
+        } else {
+            panic!("Expected WriteSingleCoil response");
+        }
+
+        // Verify the coil was actually set
+        let data_lock = data.read().await;
+        assert!(data_lock.coils[3]);
+    }
+
+    #[tokio::test]
+    async fn test_modbus_service_write_single_register() {
+        let data = Arc::new(tokio::sync::RwLock::new(ModbusData::new(10, 10, 10, 10)));
+        let service = ModbusService::new(data.clone());
+
+        let request = Request::WriteSingleRegister(2, 12345);
+
+        let result = service.call(request).await;
+        assert!(result.is_ok());
+
+        if let Ok(Response::WriteSingleRegister(addr, value)) = result {
+            assert_eq!(addr, 2);
+            assert_eq!(value, 12345);
+        } else {
+            panic!("Expected WriteSingleRegister response");
+        }
+
+        // Verify the register was actually set
+        let data_lock = data.read().await;
+        assert_eq!(data_lock.holding_registers[2], 12345);
+    }
+
+    #[tokio::test]
+    async fn test_modbus_service_write_multiple_coils() {
+        let data = Arc::new(tokio::sync::RwLock::new(ModbusData::new(10, 10, 10, 10)));
+        let service = ModbusService::new(data.clone());
+
+        let values = [true, false, true];
+        let request = Request::WriteMultipleCoils(1, values.to_vec().into());
+
+        let result = service.call(request).await;
+        assert!(result.is_ok());
+
+        if let Ok(Response::WriteMultipleCoils(addr, qty)) = result {
+            assert_eq!(addr, 1);
+            assert_eq!(qty, 3);
+        } else {
+            panic!("Expected WriteMultipleCoils response");
+        }
+
+        // Verify the coils were actually set
+        let data_lock = data.read().await;
+        assert!(data_lock.coils[1]);
+        assert!(!data_lock.coils[2]);
+        assert!(data_lock.coils[3]);
     }
 }

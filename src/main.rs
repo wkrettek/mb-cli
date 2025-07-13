@@ -8,8 +8,8 @@ mod table;
 
 use cli::{Cli, Command, ReadArea, WriteArea};
 use client::{connect_to_modbus, modbus_operation_with_timeout};
-use server::{ModbusData, run_tcp_server, run_rtu_server};
-use table::{print_register_table, print_coil_table};
+use server::{ModbusData, run_rtu_server, run_tcp_server};
+use table::{print_coil_table, print_register_table};
 
 use clap::Parser;
 
@@ -25,7 +25,8 @@ async fn main() -> anyhow::Result<()> {
                     || client.read_coils(start, qty),
                     "read coils",
                     common.timeout,
-                ).await?;
+                )
+                .await?;
                 println!("Read {} coil(s) (Unit ID: {}):", coils.len(), common.unit);
                 print_coil_table(&coils, start);
             }
@@ -35,7 +36,8 @@ async fn main() -> anyhow::Result<()> {
                     || client.read_discrete_inputs(start, qty),
                     "read discrete inputs",
                     common.timeout,
-                ).await?;
+                )
+                .await?;
                 println!(
                     "Read {} discrete input(s) (Unit ID: {}):",
                     inputs.len(),
@@ -49,7 +51,8 @@ async fn main() -> anyhow::Result<()> {
                     || client.read_holding_registers(start, qty),
                     "read holding registers",
                     common.timeout,
-                ).await?;
+                )
+                .await?;
                 println!(
                     "Read {} holding register(s) (Unit ID: {}):",
                     registers.len(),
@@ -63,7 +66,8 @@ async fn main() -> anyhow::Result<()> {
                     || client.read_input_registers(start, qty),
                     "read input registers",
                     common.timeout,
-                ).await?;
+                )
+                .await?;
                 println!(
                     "Read {} input register(s) (Unit ID: {}):",
                     registers.len(),
@@ -90,7 +94,8 @@ async fn main() -> anyhow::Result<()> {
                         || client.write_single_coil(start, bool_values[0]),
                         "write coil",
                         common.timeout,
-                    ).await?;
+                    )
+                    .await?;
                     println!(
                         "Wrote coil at address {start} with value {} (Unit ID: {})",
                         if bool_values[0] { "ON" } else { "OFF" },
@@ -102,7 +107,8 @@ async fn main() -> anyhow::Result<()> {
                         || client.write_multiple_coils(start, &bool_values),
                         "write coils",
                         common.timeout,
-                    ).await?;
+                    )
+                    .await?;
                     println!(
                         "Wrote {} coil(s) starting at address {} (Unit ID: {})",
                         bool_values.len(),
@@ -125,7 +131,8 @@ async fn main() -> anyhow::Result<()> {
                         || client.write_single_register(start, values[0]),
                         "write register",
                         common.timeout,
-                    ).await?;
+                    )
+                    .await?;
                     if common.verbose {
                         println!(
                             "Wrote holding register at address {} with value {} (0x{:04X}) (Unit ID: {})",
@@ -143,7 +150,8 @@ async fn main() -> anyhow::Result<()> {
                         || client.write_multiple_registers(start, &values),
                         "write registers",
                         common.timeout,
-                    ).await?;
+                    )
+                    .await?;
                     println!(
                         "Wrote {} holding register(s) starting at address {} (Unit ID: {})",
                         values.len(),

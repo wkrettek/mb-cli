@@ -1,6 +1,6 @@
 use crate::cli::Common;
 use std::net::SocketAddr;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use tokio_modbus::client;
 use tokio_modbus::prelude::*;
 
@@ -35,7 +35,10 @@ pub async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Contex
                     }
                 },
                 Err(_) => {
-                    eprintln!("Connection to {ip}:{} timed out after {} seconds", common.port, common.timeout);
+                    eprintln!(
+                        "Connection to {ip}:{} timed out after {} seconds",
+                        common.port, common.timeout
+                    );
                     Err(anyhow::anyhow!("Connection timeout"))
                 }
             }
@@ -57,7 +60,9 @@ pub async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Contex
                     device.to_string_lossy(),
                     common.baud,
                 ))
-            }).await {
+            })
+            .await
+            {
                 Ok(serial_result) => match serial_result {
                     Ok(mut serial) => {
                         // Disable exclusive access for virtual ports
@@ -81,7 +86,11 @@ pub async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Contex
                     }
                 },
                 Err(_) => {
-                    eprintln!("Connection to {} timed out after {} seconds", device.display(), common.timeout);
+                    eprintln!(
+                        "Connection to {} timed out after {} seconds",
+                        device.display(),
+                        common.timeout
+                    );
                     Err(anyhow::anyhow!("Connection timeout"))
                 }
             }
@@ -137,4 +146,105 @@ where
     let op_timeout = Duration::from_secs(timeout_secs);
     let result = timeout(op_timeout, operation()).await;
     handle_modbus_response_with_timeout(result, operation_name, timeout_secs).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_modbus::prelude::ExceptionCode;
+
+    #[test]
+    fn test_handle_modbus_response_with_timeout_success() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let success_result: Result<
+                Result<Result<Vec<bool>, ExceptionCode>, tokio_modbus::Error>,
+                tokio::time::error::Elapsed,
+            > = Ok(Ok(Ok([true, false, true].to_vec())));
+
+            let result =
+                handle_modbus_response_with_timeout(success_result, "test operation", 5).await;
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), [true, false, true]);
+        });
+    }
+
+    #[test]
+    fn test_handle_modbus_response_with_timeout_exception() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let exception_result: Result<
+                Result<Result<Vec<bool>, ExceptionCode>, tokio_modbus::Error>,
+                tokio::time::error::Elapsed,
+            > = Ok(Ok(Err(ExceptionCode::IllegalDataAddress)));
+
+            let result =
+                handle_modbus_response_with_timeout(exception_result, "test operation", 5).await;
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("Modbus exception"));
+        });
+    }
+
+    #[tokio::test]
+    async fn test_handle_modbus_response_with_timeout_elapsed() {
+        // Simulate a timeout by creating an Elapsed error
+        use std::future::Future;
+        use std::pin::Pin;
+        use std::task::{Context, Poll};
+
+        struct TimeoutFuture;
+        impl Future for TimeoutFuture {
+            type Output = Result<Result<Vec<bool>, ExceptionCode>, tokio_modbus::Error>;
+            fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+                Poll::Pending // Never completes
+            }
+        }
+
+        let result = tokio::time::timeout(Duration::from_millis(1), TimeoutFuture).await;
+
+        let timeout_result = handle_modbus_response_with_timeout(result, "test operation", 5).await;
+        assert!(timeout_result.is_err());
+        assert!(
+            timeout_result
+                .unwrap_err()
+                .to_string()
+                .contains("Operation timeout")
+        );
+    }
+
+    #[test]
+    fn test_handle_modbus_response_with_timeout_modbus_error() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let io_error =
+                std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "connection failed");
+            let modbus_error_result: Result<
+                Result<Result<Vec<bool>, ExceptionCode>, tokio_modbus::Error>,
+                tokio::time::error::Elapsed,
+            > = Ok(Err(tokio_modbus::Error::Transport(io_error)));
+
+            let result =
+                handle_modbus_response_with_timeout(modbus_error_result, "test operation", 5).await;
+            assert!(result.is_err());
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("connection failed")
+            );
+        });
+    }
+
+    // Test timeout configuration ranges
+    #[test]
+    fn test_timeout_duration_creation() {
+        let duration1 = Duration::from_secs(1);
+        assert_eq!(duration1.as_secs(), 1);
+
+        let duration30 = Duration::from_secs(30);
+        assert_eq!(duration30.as_secs(), 30);
+
+        let duration_max = Duration::from_secs(u64::MAX);
+        assert_eq!(duration_max.as_secs(), u64::MAX);
+    }
 }

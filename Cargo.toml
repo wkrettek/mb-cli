@@ -13,3 +13,6 @@ clap = { version = "4.5.40", features = ["derive"] }
 tokio = { version = "1.46", features = ["full"] }
 tokio-modbus = { version = "0.16.1", features = ["tcp-server", "rtu-server"] }
 tokio-serial = "5.4"
+
+[dev-dependencies]
+tokio-test = "0.4"

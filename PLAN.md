@@ -46,7 +46,7 @@
     - Maybe print a table of results?
     - [x] server
         - [ ] print the action and from where (do later)
-- [ ] Lint and cleanup
+- [x] Lint and cleanup
     - [x] DRY violations:
         - [x] Extract common read operation error handling (4x duplication)
         - [x] Extract common write operation error handling (2x duplication) 
@@ -68,32 +68,46 @@
         - [x] Remove unused `arg` import from clap
         - [x] Fix help text examples (--bind → --ip)
     - [x] Add constants for magic numbers (ports, baud rates) - Won't do: code is clear as-is
-    - [ ] Get multiple AI reviews
+    - [x] Get multiple AI reviews
         - [x] o3
-        - [ ] gemini
+        - [x] gemini
 - [ ] Add comprehensive error handling and retry logic
     - [ ] Very good error messages for common issues
         - [ ] inputs and discretes are not writeable
-    - [ ] Timeout configuration
-- [ ] Add tests for all functionality
+    - [x] Timeout configuration
+- [x] Add basic unit tests for fast execution (28 tests total)
+    - [x] CLI validation tests (6 tests)
+        - [x] validate_coil_qty() with valid/invalid inputs
+        - [x] validate_register_qty() with valid/invalid inputs
+        - [x] Error message content validation
+    - [x] Table formatting tests (8 tests)
+        - [x] Empty input handling
+        - [x] Single and multiple value tables
+        - [x] Address calculation logic
+        - [x] Header formatting
+    - [x] Server logic tests (9 tests)
+        - [x] ModbusData initialization
+        - [x] Read operations (coils, holding registers)
+        - [x] Write operations (single/multiple)
+        - [x] Out-of-bounds exception handling
+        - [x] Data persistence verification
+    - [x] Client helper tests (5 tests)
+        - [x] Timeout error handling
+        - [x] Exception response handling
+        - [x] Duration configuration
+- [ ] Add integration tests (future enhancement)
     - [ ] Basic integration tests (server on port 5020):
         - [ ] Server startup and shutdown
-        - [ ] Read operations (coils, discrete, holding, input registers)
-        - [ ] Single writes (coil, holding register)
-        - [ ] Multiple writes (coils, holding registers)
-        - [ ] Table output formatting
-        - [ ] Verbose mode behavior
-        - [ ] Failure cases:
-            - [ ] Address out of range (IllegalDataAddress exception)
-            - [ ] Write to read-only areas (IllegalFunction exception)
-            - [ ] Connection to non-existent server
-            - [ ] CLI validation (missing args, conflicting args)
-    - [ ] Unit tests for parsing
-    - [ ] Mock server tests
-- [ ] Create comprehensive documentation and examples
-    - [ ] README with usage examples
-        - Installation
-            - cargo install
+        - [ ] End-to-end CLI testing
+        - [ ] Network failure scenarios
+        - [ ] CLI argument validation
+- [x] Create comprehensive documentation and examples
+    - [x] README with usage examples
+        - [x] Installation instructions
+        - [x] Basic usage examples
+        - [x] Command reference
+        - [x] Protocol detection explanation
+        - [x] Use case examples
     - [ ] Example scripts
 - [ ] Package and publish
     - [ ] Cargo.toml metadata for publishing
