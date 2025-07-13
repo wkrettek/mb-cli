@@ -12,13 +12,21 @@ use tokio_modbus::server::{Service, tcp::Server, rtu};
 /// Flags common to every subcommand
 #[derive(Debug, clap::Args)]
 struct Common {
-    /// Modbus TCP server IP address
-    #[arg(long, value_parser = clap::value_parser!(IpAddr))]
-    ip: IpAddr,
+    /// Modbus TCP server IP address (for TCP client)
+    #[arg(long, value_parser = clap::value_parser!(IpAddr), conflicts_with = "device")]
+    ip: Option<IpAddr>,
 
-    /// Modbus TCP server port
+    /// Serial device path (for RTU client)
+    #[arg(long, conflicts_with = "ip")]
+    device: Option<PathBuf>,
+
+    /// Modbus TCP server port (TCP only)
     #[arg(long, default_value_t = 502)]
     port: u16,
+
+    /// Baud rate for serial communication (RTU only)
+    #[arg(long, default_value_t = 9600)]
+    baud: u32,
 
     /// Modbus slave / unit ID
     #[arg(long, default_value_t = 0)]
@@ -321,20 +329,51 @@ impl Service for ModbusService {
     }
 }
 
-async fn connect_to_modbus(ip: IpAddr, port: u16, unit_id: u8) -> anyhow::Result<client::Context> {
-    let socket_addr = SocketAddr::new(ip, port);
-    println!("Connecting to Modbus server at {ip}:{port} (Unit ID: {unit_id})...");
+async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Context> {
+    match (&common.ip, &common.device) {
+        (Some(ip), None) => {
+            // TCP connection
+            let socket_addr = SocketAddr::new(*ip, common.port);
+            println!("Connecting to Modbus TCP server at {ip}:{} (Unit ID: {})...", common.port, common.unit);
 
-    match client::tcp::connect(socket_addr).await {
-        Ok(mut ctx) => {
-            // Set the slave/unit ID
-            ctx.set_slave(Slave(unit_id));
-            println!("Successfully connected to Modbus server at {ip}:{port}");
-            Ok(ctx)
+            match client::tcp::connect(socket_addr).await {
+                Ok(mut ctx) => {
+                    ctx.set_slave(Slave(common.unit));
+                    println!("Successfully connected to Modbus TCP server at {ip}:{}", common.port);
+                    Ok(ctx)
+                }
+                Err(e) => {
+                    println!("Failed to connect to {ip}:{} - Error: {e}", common.port);
+                    Err(e.into())
+                }
+            }
         }
-        Err(e) => {
-            println!("Failed to connect to {ip}:{port} - Error: {e}");
-            Err(e.into())
+        (None, Some(device)) => {
+            // RTU connection
+            println!("Connecting to Modbus RTU device at {} (Baud: {}, Unit ID: {})...", 
+                     device.display(), common.baud, common.unit);
+
+            match tokio_serial::SerialStream::open(&tokio_serial::new(device.to_string_lossy(), common.baud)) {
+                Ok(mut serial) => {
+                    // Disable exclusive access for virtual ports
+                    if let Err(e) = serial.set_exclusive(false) {
+                        println!("Warning: Could not disable exclusive access: {e}");
+                    }
+                    let ctx = client::rtu::attach_slave(serial, Slave(common.unit));
+                    println!("Successfully connected to Modbus RTU device at {}", device.display());
+                    Ok(ctx)
+                }
+                Err(e) => {
+                    println!("Failed to connect to {} - Error: {e}", device.display());
+                    Err(e.into())
+                }
+            }
+        }
+        (None, None) => {
+            Err(anyhow::anyhow!("Must specify either --ip for TCP or --device for RTU"))
+        }
+        (Some(_), Some(_)) => {
+            Err(anyhow::anyhow!("Cannot specify both --ip and --device"))
         }
     }
 }
@@ -350,7 +389,7 @@ async fn main() -> anyhow::Result<()> {
                     "Reading coil at address {} (Unit ID: {})",
                     start, common.unit
                 );
-                let mut client = connect_to_modbus(common.ip, common.port, common.unit).await?;
+                let mut client = connect_to_modbus(&common).await?;
 
                 match client.read_coils(start, qty).await {
                     Ok(response) => match response {
@@ -381,7 +420,7 @@ async fn main() -> anyhow::Result<()> {
                     "Reading discrete input at address {} (Unit ID: {})",
                     start, common.unit
                 );
-                let mut client = connect_to_modbus(common.ip, common.port, common.unit).await?;
+                let mut client = connect_to_modbus(&common).await?;
 
                 match client.read_discrete_inputs(start, qty).await {
                     Ok(response) => match response {
@@ -412,7 +451,7 @@ async fn main() -> anyhow::Result<()> {
                     "Reading holding register at address {} (Unit ID: {})",
                     start, common.unit
                 );
-                let mut client = connect_to_modbus(common.ip, common.port, common.unit).await?;
+                let mut client = connect_to_modbus(&common).await?;
 
                 match client.read_holding_registers(start, qty).await {
                     Ok(response) => match response {
@@ -439,7 +478,7 @@ async fn main() -> anyhow::Result<()> {
                     "Reading input register at address {} (Unit ID: {})",
                     start, common.unit
                 );
-                let mut client = connect_to_modbus(common.ip, common.port, common.unit).await?;
+                let mut client = connect_to_modbus(&common).await?;
 
                 match client.read_input_registers(start, qty).await {
                     Ok(response) => match response {
@@ -469,7 +508,7 @@ async fn main() -> anyhow::Result<()> {
                 values,
                 common,
             } => {
-                let mut client = connect_to_modbus(common.ip, common.port, common.unit).await?;
+                let mut client = connect_to_modbus(&common).await?;
 
                 // Convert u16 values to bool values (0 = false, non-zero = true)
                 let bool_values: Vec<bool> = values.iter().map(|&v| v != 0).collect();
@@ -539,7 +578,7 @@ async fn main() -> anyhow::Result<()> {
                 values,
                 common,
             } => {
-                let mut client = connect_to_modbus(common.ip, common.port, common.unit).await?;
+                let mut client = connect_to_modbus(&common).await?;
 
                 if values.len() == 1 {
                     // Single register write (FC 6)
@@ -699,8 +738,14 @@ async fn main() -> anyhow::Result<()> {
 
                     println!("Using baud rate: {baud}");
                     
-                    match rtu::Server::new_from_path(&device_path, baud) {
-                        Ok(rtu_server) => {
+                    match tokio_serial::SerialStream::open(&tokio_serial::new(device_path.to_string_lossy(), baud)) {
+                        Ok(mut serial) => {
+                            // Disable exclusive access for virtual ports
+                            if let Err(e) = serial.set_exclusive(false) {
+                                println!("Warning: Could not disable exclusive access: {e}");
+                            }
+                            
+                            let rtu_server = rtu::Server::new(serial);
                             let service = ModbusService::new(data);
                             println!("Modbus RTU server listening on {}", device_path.display());
                             println!("Press Ctrl+C to stop the server");

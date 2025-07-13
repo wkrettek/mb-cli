@@ -10,7 +10,7 @@
     - [x] Handle read/write requests from clients
     - [x] Manual verification of all read/write TCP functionality
 
-## Next: High Priority  
+## Next: High Priority
 - [ ] Add support for Modbus RTU (serial) in addition to TCP
     - [ ] Add serial port dependencies (tokio-serial)
     - [ ] Add --device flag for serial port selection
@@ -21,6 +21,18 @@
     - [ ] Auto-select RTU when --device is provided
 
 ## Before Publishing: Medium Priority
+- [ ] Clean up cli output
+    - [ ] cli
+    - [ ] Hide more detail behind --verbose/-v
+    - Maybe print a table of results?
+    - [ ] server
+        - [ ] print the action and from where
+- [ ] Lint and cleanup
+    - [ ] Use DRY where possible
+    - [ ] Break into multiple files
+    - [ ] Get multiple AI reviews
+        - [ ] o3
+        - [ ] gemini
 - [ ] Add comprehensive error handling and retry logic
     - [ ] Implement connection retry with backoff
     - [ ] Very good error messages for common issues
