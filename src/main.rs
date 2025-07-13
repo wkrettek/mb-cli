@@ -1,9 +1,8 @@
 use clap::{Parser, Subcommand};
 use std::{
-    future,
     net::{IpAddr, SocketAddr},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 use tokio_modbus::client::{Reader, Writer};
 use tokio_modbus::prelude::*;
@@ -215,11 +214,11 @@ impl ModbusData {
 
 #[derive(Clone)]
 struct ModbusService {
-    data: Arc<Mutex<ModbusData>>,
+    data: Arc<tokio::sync::RwLock<ModbusData>>,
 }
 
 impl ModbusService {
-    fn new(data: Arc<Mutex<ModbusData>>) -> Self {
+    fn new(data: Arc<tokio::sync::RwLock<ModbusData>>) -> Self {
         Self { data }
     }
 }
@@ -228,13 +227,12 @@ impl Service for ModbusService {
     type Request = Request<'static>;
     type Response = Response;
     type Exception = ExceptionCode;
-    type Future = future::Ready<Result<Self::Response, Self::Exception>>;
+    type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Exception>> + Send>>;
 
     fn call(&self, req: Self::Request) -> Self::Future {
-        let mut data = match self.data.lock() {
-            Ok(data) => data,
-            Err(_) => return future::ready(Err(ExceptionCode::ServerDeviceFailure)),
-        };
+        let data = self.data.clone();
+        Box::pin(async move {
+            let mut data = data.write().await;
 
         let response = match req {
             Request::ReadCoils(addr, qty) => {
@@ -246,7 +244,7 @@ impl Service for ModbusService {
                     let coils = data.coils[start..end].to_vec();
                     Response::ReadCoils(coils)
                 } else {
-                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                    return Err(ExceptionCode::IllegalDataAddress);
                 }
             }
             Request::ReadDiscreteInputs(addr, qty) => {
@@ -257,7 +255,7 @@ impl Service for ModbusService {
                     let inputs = data.discrete_inputs[start..end].to_vec();
                     Response::ReadDiscreteInputs(inputs)
                 } else {
-                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                    return Err(ExceptionCode::IllegalDataAddress);
                 }
             }
             Request::ReadHoldingRegisters(addr, qty) => {
@@ -268,7 +266,7 @@ impl Service for ModbusService {
                     let registers = data.holding_registers[start..end].to_vec();
                     Response::ReadHoldingRegisters(registers)
                 } else {
-                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                    return Err(ExceptionCode::IllegalDataAddress);
                 }
             }
             Request::ReadInputRegisters(addr, qty) => {
@@ -279,7 +277,7 @@ impl Service for ModbusService {
                     let registers = data.input_registers[start..end].to_vec();
                     Response::ReadInputRegisters(registers)
                 } else {
-                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                    return Err(ExceptionCode::IllegalDataAddress);
                 }
             }
             Request::WriteSingleCoil(addr, value) => {
@@ -289,7 +287,7 @@ impl Service for ModbusService {
                     data.coils[addr] = value;
                     Response::WriteSingleCoil(addr as u16, value)
                 } else {
-                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                    return Err(ExceptionCode::IllegalDataAddress);
                 }
             }
             Request::WriteSingleRegister(addr, value) => {
@@ -299,7 +297,7 @@ impl Service for ModbusService {
                     data.holding_registers[addr] = value;
                     Response::WriteSingleRegister(addr as u16, value)
                 } else {
-                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                    return Err(ExceptionCode::IllegalDataAddress);
                 }
             }
             Request::WriteMultipleCoils(addr, values) => {
@@ -312,7 +310,7 @@ impl Service for ModbusService {
                     }
                     Response::WriteMultipleCoils(addr, values.len() as u16)
                 } else {
-                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                    return Err(ExceptionCode::IllegalDataAddress);
                 }
             }
             Request::WriteMultipleRegisters(addr, values) => {
@@ -325,14 +323,15 @@ impl Service for ModbusService {
                     }
                     Response::WriteMultipleRegisters(addr, values.len() as u16)
                 } else {
-                    return future::ready(Err(ExceptionCode::IllegalDataAddress));
+                    return Err(ExceptionCode::IllegalDataAddress);
                 }
             }
             _ => {
-                return future::ready(Err(ExceptionCode::IllegalFunction));
+                return Err(ExceptionCode::IllegalFunction);
             }
         };
-        future::ready(Ok(response))
+        Ok(response)
+        })
     }
 }
 
@@ -403,7 +402,7 @@ where
 async fn run_tcp_server(
     ip_addr: IpAddr,
     port: u16,
-    data: Arc<Mutex<ModbusData>>,
+    data: Arc<tokio::sync::RwLock<ModbusData>>,
 ) -> anyhow::Result<()> {
     let socket_addr = SocketAddr::new(ip_addr, port);
     let listener = tokio::net::TcpListener::bind(socket_addr).await?;
@@ -632,7 +631,7 @@ async fn main() -> anyhow::Result<()> {
         } => {
             // Auto-detect TCP vs RTU based on arguments
             // Create shared data storage
-            let data = Arc::new(Mutex::new(ModbusData::new(
+            let data = Arc::new(tokio::sync::RwLock::new(ModbusData::new(
                 num_coils,
                 num_discrete,
                 num_holding,

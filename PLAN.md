@@ -24,6 +24,22 @@
 
 ## Next: High Priority
 
+## Critical Correctness Fixes: High Priority
+- [ ] **RTU serial port opening**: Replace blocking `SerialStream::open()` with async version for cross-platform compatibility
+- [ ] **RTU server unit ID**: Fix hard-coded slave=1 in RTU server to use actual unit parameter
+- [x] **Async-safe Mutex**: Replace `std::sync::Mutex` with `tokio::sync::RwLock` to prevent blocking async runtime
+- [ ] **Coil value parsing**: Change from accepting any `u16` to proper `bool` parsing to catch user typos
+
+## Usability Improvements: Medium Priority  
+- [ ] **Range validation**: Add Clap range validation for qty (coils: 1-2000, registers: 1-125)
+- [ ] **Verbose server logging**: Gate server read/write logs behind `--verbose` flag to reduce spam
+- [ ] **Serial port options**: Add optional `--parity`, `--stop-bits`, `--data-bits` flags for RS-485 compatibility
+
+## Polish Improvements: Low Priority
+- [ ] **Table helper DRY**: Extract common header logic from print_register_table and print_coil_table
+- [ ] **Transport enum**: Replace nested match with `enum Transport { Tcp(SocketAddr), Rtu(PathBuf,u32) }`
+- [ ] **Feature-gated tables**: Add optional Unicode box drawing with feature flag
+
 ## Before Publishing: Medium Priority
 - [ ] Clean up cli output
     - [x] cli
@@ -32,11 +48,11 @@
     - [x] server
         - [ ] print the action and from where (do later)
 - [ ] Lint and cleanup
-    - [ ] DRY violations:
-        - [ ] Extract common read operation error handling (4x duplication)
-        - [ ] Extract common write operation error handling (2x duplication) 
-        - [ ] Extract TCP server setup (2x duplication)
-        - [ ] Create error handling utilities
+    - [x] DRY violations:
+        - [x] Extract common read operation error handling (4x duplication)
+        - [x] Extract common write operation error handling (2x duplication) 
+        - [x] Extract TCP server setup (2x duplication)
+        - [x] Create error handling utilities (handle_modbus_response helper)
     - [ ] Function length:
         - [ ] Break down 411-line main() function
         - [ ] Extract server command handling
