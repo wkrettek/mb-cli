@@ -32,7 +32,6 @@ struct Common {
     #[arg(long, default_value_t = 0)]
     unit: u8,
 
-
     /// Verbose output
     #[arg(long, short)]
     verbose: bool,
@@ -44,7 +43,7 @@ struct Common {
     author,
     version,
     about = "Modbus TCP client and server",
-    after_help = "EXAMPLES:\n    mb read holding --ip 127.0.0.1 --port 502 --addr 1\n    mb read coils --ip 192.168.1.100 --addr 0 --qty 8\n    mb write holding --ip 127.0.0.1 --addr 100 --value 42\n    mb write coils --ip 127.0.0.1 --addr 0 --value 1,0,1,1\n    mb server --bind 0.0.0.0 --port 502"
+    after_help = "EXAMPLES:\n    mb read holding --ip 127.0.0.1 --port 502 --addr 1\n    mb read coils --ip 192.168.1.100 --addr 0 --qty 8\n    mb write holding --ip 127.0.0.1 --addr 100 --value 42\n    mb write coils --ip 127.0.0.1 --addr 0 --value 1,0,1,1\n    mb server --ip 0.0.0.0 --port 502"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -674,12 +673,12 @@ async fn main() -> anyhow::Result<()> {
             device,
             port,
             baud,
-            unit,
+            unit: _,
             num_coils,
             num_discrete,
             num_holding,
             num_input,
-            verbose,
+            verbose: _,
         } => {
             // Auto-detect TCP vs RTU based on arguments
             // Create shared data storage

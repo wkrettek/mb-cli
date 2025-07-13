@@ -46,9 +46,11 @@
         - [ ] server.rs - Server implementation  
         - [ ] table.rs - Table formatting
         - [ ] main.rs - Just orchestration
-    - [ ] Remove dead code:
-        - [ ] Remove unused `format` field from Common struct
-        - [ ] Remove unused server variables (_unit, _verbose)
+    - [x] Remove dead code:
+        - [x] Remove unused `format` field from Common struct
+        - [x] Remove unused server variables (_unit, _verbose)
+        - [x] Remove unused `arg` import from clap
+        - [x] Fix help text examples (--bind → --ip)
     - [ ] Add constants for magic numbers (ports, baud rates)
     - [ ] Get multiple AI reviews
         - [ ] o3
