@@ -377,6 +377,76 @@ fn print_coil_table(coils: &[bool], start_addr: u16) {
     }
 }
 
+// Generic helper for handling Modbus response errors
+async fn handle_modbus_response<T, E>(
+    result: Result<Result<T, E>, tokio_modbus::Error>,
+    operation: &str,
+) -> anyhow::Result<T>
+where
+    E: std::fmt::Debug,
+{
+    match result {
+        Ok(response) => match response {
+            Ok(data) => Ok(data),
+            Err(exception) => {
+                eprintln!("Modbus exception response: {exception:?}");
+                Err(anyhow::anyhow!("Modbus exception: {:?}", exception))
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to {operation}: {e}");
+            Err(e.into())
+        }
+    }
+}
+
+async fn run_tcp_server(
+    ip_addr: IpAddr,
+    port: u16,
+    data: Arc<Mutex<ModbusData>>,
+) -> anyhow::Result<()> {
+    let socket_addr = SocketAddr::new(ip_addr, port);
+    let listener = tokio::net::TcpListener::bind(socket_addr).await?;
+    println!("Modbus TCP server listening on {ip_addr}:{port}");
+    println!("Press Ctrl+C to stop the server");
+
+    let server = Server::new(listener);
+    let service = ModbusService::new(data);
+
+    let on_connected = move |stream, socket_addr| {
+        let service = service.clone();
+        async move {
+            println!("Client connected: {socket_addr}");
+            tokio_modbus::server::tcp::accept_tcp_connection(
+                stream,
+                socket_addr,
+                |_| Ok(Some(service.clone())),
+            )
+        }
+    };
+
+    let on_process_error = |err| {
+        eprintln!("Server error: {err}");
+    };
+
+    let ctrl_c = Box::pin(async {
+        tokio::signal::ctrl_c().await.ok();
+    });
+
+    match server
+        .serve_until(&on_connected, on_process_error, ctrl_c)
+        .await?
+    {
+        tokio_modbus::server::Terminated::Finished => {
+            println!("\nServer finished");
+        }
+        tokio_modbus::server::Terminated::Aborted => {
+            println!("\nServer stopped");
+        }
+    }
+    Ok(())
+}
+
 async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Context> {
     match (&common.ip, &common.device) {
         (Some(ip), None) => {
@@ -458,95 +528,27 @@ async fn main() -> anyhow::Result<()> {
         Command::Read { area } => match area {
             ReadArea::Coil { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-
-                match client.read_coils(start, qty).await {
-                    Ok(response) => match response {
-                        Ok(coils) => {
-                            println!("Read {} coil(s) (Unit ID: {}):", coils.len(), common.unit);
-                            print_coil_table(&coils, start);
-                        }
-                        Err(exception) => {
-                            eprintln!("Modbus exception response: {exception:?}");
-                            return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Failed to read coils: {e}");
-                        return Err(e.into());
-                    }
-                }
+                let coils = handle_modbus_response(client.read_coils(start, qty).await, "read coils").await?;
+                println!("Read {} coil(s) (Unit ID: {}):", coils.len(), common.unit);
+                print_coil_table(&coils, start);
             }
             ReadArea::Discrete { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-
-                match client.read_discrete_inputs(start, qty).await {
-                    Ok(response) => match response {
-                        Ok(inputs) => {
-                            println!(
-                                "Read {} discrete input(s) (Unit ID: {}):",
-                                inputs.len(),
-                                common.unit
-                            );
-                            print_coil_table(&inputs, start);
-                        }
-                        Err(exception) => {
-                            eprintln!("Modbus exception response: {exception:?}");
-                            return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Failed to read discrete inputs: {e}");
-                        return Err(e.into());
-                    }
-                }
+                let inputs = handle_modbus_response(client.read_discrete_inputs(start, qty).await, "read discrete inputs").await?;
+                println!("Read {} discrete input(s) (Unit ID: {}):", inputs.len(), common.unit);
+                print_coil_table(&inputs, start);
             }
             ReadArea::Holding { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-
-                match client.read_holding_registers(start, qty).await {
-                    Ok(response) => match response {
-                        Ok(registers) => {
-                            println!(
-                                "Read {} holding register(s) (Unit ID: {}):",
-                                registers.len(),
-                                common.unit
-                            );
-                            print_register_table(&registers, start, common.verbose);
-                        }
-                        Err(exception) => {
-                            eprintln!("Modbus exception response: {exception:?}");
-                            return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Failed to read holding registers: {e}");
-                        return Err(e.into());
-                    }
-                }
+                let registers = handle_modbus_response(client.read_holding_registers(start, qty).await, "read holding registers").await?;
+                println!("Read {} holding register(s) (Unit ID: {}):", registers.len(), common.unit);
+                print_register_table(&registers, start, common.verbose);
             }
             ReadArea::Input { start, qty, common } => {
                 let mut client = connect_to_modbus(&common).await?;
-
-                match client.read_input_registers(start, qty).await {
-                    Ok(response) => match response {
-                        Ok(registers) => {
-                            println!(
-                                "Read {} input register(s) (Unit ID: {}):",
-                                registers.len(),
-                                common.unit
-                            );
-                            print_register_table(&registers, start, common.verbose);
-                        }
-                        Err(exception) => {
-                            eprintln!("Modbus exception response: {exception:?}");
-                            return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Failed to read input registers: {e}");
-                        return Err(e.into());
-                    }
-                }
+                let registers = handle_modbus_response(client.read_input_registers(start, qty).await, "read input registers").await?;
+                println!("Read {} input register(s) (Unit ID: {}):", registers.len(), common.unit);
+                print_register_table(&registers, start, common.verbose);
             }
         },
 
@@ -563,48 +565,22 @@ async fn main() -> anyhow::Result<()> {
 
                 if bool_values.len() == 1 {
                     // Single coil write (FC 5)
-                    match client.write_single_coil(start, bool_values[0]).await {
-                        Ok(response) => match response {
-                            Ok(_) => {
-                                println!(
-                                    "Wrote coil at address {start} with value {} (Unit ID: {})",
-                                    if bool_values[0] { "ON" } else { "OFF" },
-                                    common.unit
-                                );
-                            }
-                            Err(exception) => {
-                                eprintln!("Modbus exception response: {exception:?}");
-                                return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
-                            }
-                        },
-                        Err(e) => {
-                            eprintln!("Failed to write coil: {e}");
-                            return Err(e.into());
-                        }
-                    }
+                    handle_modbus_response(client.write_single_coil(start, bool_values[0]).await, "write coil").await?;
+                    println!(
+                        "Wrote coil at address {start} with value {} (Unit ID: {})",
+                        if bool_values[0] { "ON" } else { "OFF" },
+                        common.unit
+                    );
                 } else {
                     // Multiple coils write (FC 15)
-                    match client.write_multiple_coils(start, &bool_values).await {
-                        Ok(response) => match response {
-                            Ok(_) => {
-                                println!(
-                                    "Wrote {} coil(s) starting at address {} (Unit ID: {})",
-                                    bool_values.len(),
-                                    start,
-                                    common.unit
-                                );
-                                print_coil_table(&bool_values, start);
-                            }
-                            Err(exception) => {
-                                eprintln!("Modbus exception response: {exception:?}");
-                                return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
-                            }
-                        },
-                        Err(e) => {
-                            eprintln!("Failed to write coils: {e}");
-                            return Err(e.into());
-                        }
-                    }
+                    handle_modbus_response(client.write_multiple_coils(start, &bool_values).await, "write coils").await?;
+                    println!(
+                        "Wrote {} coil(s) starting at address {} (Unit ID: {})",
+                        bool_values.len(),
+                        start,
+                        common.unit
+                    );
+                    print_coil_table(&bool_values, start);
                 }
             }
             WriteArea::Holding {
@@ -616,54 +592,28 @@ async fn main() -> anyhow::Result<()> {
 
                 if values.len() == 1 {
                     // Single register write (FC 6)
-                    match client.write_single_register(start, values[0]).await {
-                        Ok(response) => match response {
-                            Ok(_) => {
-                                if common.verbose {
-                                    println!(
-                                        "Wrote holding register at address {} with value {} (0x{:04X}) (Unit ID: {})",
-                                        start, values[0], values[0], common.unit
-                                    );
-                                } else {
-                                    println!(
-                                        "Wrote holding register at address {} with value {} (Unit ID: {})",
-                                        start, values[0], common.unit
-                                    );
-                                }
-                            }
-                            Err(exception) => {
-                                eprintln!("Modbus exception response: {exception:?}");
-                                return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
-                            }
-                        },
-                        Err(e) => {
-                            eprintln!("Failed to write register: {e}");
-                            return Err(e.into());
-                        }
+                    handle_modbus_response(client.write_single_register(start, values[0]).await, "write register").await?;
+                    if common.verbose {
+                        println!(
+                            "Wrote holding register at address {} with value {} (0x{:04X}) (Unit ID: {})",
+                            start, values[0], values[0], common.unit
+                        );
+                    } else {
+                        println!(
+                            "Wrote holding register at address {} with value {} (Unit ID: {})",
+                            start, values[0], common.unit
+                        );
                     }
                 } else {
                     // Multiple registers write (FC 16)
-                    match client.write_multiple_registers(start, &values).await {
-                        Ok(response) => match response {
-                            Ok(_) => {
-                                println!(
-                                    "Wrote {} holding register(s) starting at address {} (Unit ID: {})",
-                                    values.len(),
-                                    start,
-                                    common.unit
-                                );
-                                print_register_table(&values, start, common.verbose);
-                            }
-                            Err(exception) => {
-                                eprintln!("Modbus exception response: {exception:?}");
-                                return Err(anyhow::anyhow!("Modbus exception: {:?}", exception));
-                            }
-                        },
-                        Err(e) => {
-                            eprintln!("Failed to write registers: {e}");
-                            return Err(e.into());
-                        }
-                    }
+                    handle_modbus_response(client.write_multiple_registers(start, &values).await, "write registers").await?;
+                    println!(
+                        "Wrote {} holding register(s) starting at address {} (Unit ID: {})",
+                        values.len(),
+                        start,
+                        common.unit
+                    );
+                    print_register_table(&values, start, common.verbose);
                 }
             }
         },
@@ -721,46 +671,7 @@ async fn main() -> anyhow::Result<()> {
                     // TCP Server
                     println!("Starting Modbus TCP server on {ip_addr}:{port}");
                     print_config();
-
-                    let socket_addr = SocketAddr::new(ip_addr, port);
-                    let listener = tokio::net::TcpListener::bind(socket_addr).await?;
-                    println!("Modbus TCP server listening on {ip_addr}:{port}");
-                    println!("Press Ctrl+C to stop the server");
-
-                    let server = Server::new(listener);
-                    let service = ModbusService::new(data);
-
-                    let on_connected = move |stream, socket_addr| {
-                        let service = service.clone();
-                        async move {
-                            println!("Client connected: {socket_addr}");
-                            tokio_modbus::server::tcp::accept_tcp_connection(
-                                stream,
-                                socket_addr,
-                                |_| Ok(Some(service.clone())),
-                            )
-                        }
-                    };
-
-                    let on_process_error = |err| {
-                        eprintln!("Server error: {err}");
-                    };
-
-                    let ctrl_c = Box::pin(async {
-                        tokio::signal::ctrl_c().await.ok();
-                    });
-
-                    match server
-                        .serve_until(&on_connected, on_process_error, ctrl_c)
-                        .await?
-                    {
-                        tokio_modbus::server::Terminated::Finished => {
-                            println!("\nServer finished");
-                        }
-                        tokio_modbus::server::Terminated::Aborted => {
-                            println!("\nServer stopped");
-                        }
-                    }
+                    run_tcp_server(ip_addr, port, data).await?;
                 }
                 (None, Some(device_path)) => {
                     // RTU Server
@@ -812,46 +723,7 @@ async fn main() -> anyhow::Result<()> {
                     let ip_addr = IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0));
                     println!("Starting Modbus TCP server on {ip_addr}:{port} (default)");
                     print_config();
-
-                    let socket_addr = SocketAddr::new(ip_addr, port);
-                    let listener = tokio::net::TcpListener::bind(socket_addr).await?;
-                    println!("Modbus TCP server listening on {ip_addr}:{port}");
-                    println!("Press Ctrl+C to stop the server");
-
-                    let server = Server::new(listener);
-                    let service = ModbusService::new(data);
-
-                    let on_connected = move |stream, socket_addr| {
-                        let service = service.clone();
-                        async move {
-                            println!("Client connected: {socket_addr}");
-                            tokio_modbus::server::tcp::accept_tcp_connection(
-                                stream,
-                                socket_addr,
-                                |_| Ok(Some(service.clone())),
-                            )
-                        }
-                    };
-
-                    let on_process_error = |err| {
-                        eprintln!("Server error: {err}");
-                    };
-
-                    let ctrl_c = Box::pin(async {
-                        tokio::signal::ctrl_c().await.ok();
-                    });
-
-                    match server
-                        .serve_until(&on_connected, on_process_error, ctrl_c)
-                        .await?
-                    {
-                        tokio_modbus::server::Terminated::Finished => {
-                            println!("\nServer finished");
-                        }
-                        tokio_modbus::server::Terminated::Aborted => {
-                            println!("\nServer stopped");
-                        }
-                    }
+                    run_tcp_server(ip_addr, port, data).await?;
                 }
                 (Some(_), Some(_)) => {
                     // This should be prevented by clap conflicts
