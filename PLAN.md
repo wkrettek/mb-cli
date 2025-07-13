@@ -31,14 +31,13 @@
 - [x] **Coil value parsing**: ~~Change from accepting any `u16` to proper `bool` parsing~~ (Won't do - being permissive is better)
 
 ## Usability Improvements: Medium Priority  
-- [ ] **Range validation**: Add Clap range validation for qty (coils: 1-2000, registers: 1-125)
+- [x] **Range validation**: Add Clap range validation for qty (coils: 1-2000, registers: 1-125) with detailed Modbus spec error messages
 - [ ] **Verbose server logging**: Gate server read/write logs behind `--verbose` flag to reduce spam
 - [ ] **Serial port options**: Add optional `--parity`, `--stop-bits`, `--data-bits` flags for RS-485 compatibility
 
 ## Polish Improvements: Low Priority
-- [ ] **Table helper DRY**: Extract common header logic from print_register_table and print_coil_table
+- [x] **Table helper DRY**: Extract common header logic from print_register_table and print_coil_table
 - [ ] **Transport enum**: Replace nested match with `enum Transport { Tcp(SocketAddr), Rtu(PathBuf,u32) }`
-- [ ] **Feature-gated tables**: Add optional Unicode box drawing with feature flag
 
 ## Before Publishing: Medium Priority
 - [ ] Clean up cli output
@@ -69,12 +68,11 @@
         - [x] Fix help text examples (--bind → --ip)
     - [ ] Add constants for magic numbers (ports, baud rates)
     - [ ] Get multiple AI reviews
-        - [ ] o3
+        - [x] o3
         - [ ] gemini
 - [ ] Add comprehensive error handling and retry logic
-    - [ ] Implement connection retry with backoff
     - [ ] Very good error messages for common issues
-        - inputs and discretes are not writeable
+        - [ ] inputs and discretes are not writeable
     - [ ] Timeout configuration
 - [ ] Add tests for all functionality
     - [ ] Basic integration tests (server on port 5020):

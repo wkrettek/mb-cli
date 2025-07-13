@@ -368,18 +368,39 @@ impl Service for ModbusService {
     }
 }
 
+// Helper function for table headers
+fn print_table_header(columns: &[&str]) {
+    // Print column names
+    for (i, col) in columns.iter().enumerate() {
+        if i == 0 {
+            print!("{:<8}", col);
+        } else {
+            print!(" {:<6}", col);
+        }
+    }
+    println!();
+
+    // Print separator line
+    for (i, _) in columns.iter().enumerate() {
+        if i == 0 {
+            print!("{:─<8}", "");
+        } else {
+            print!(" {:─<6}", "");
+        }
+    }
+    println!();
+}
+
 fn print_register_table(registers: &[u16], start_addr: u16, verbose: bool) {
     if registers.is_empty() {
         return;
     }
 
-    // Print header
+    // Use helper for header
     if verbose {
-        println!("{:<8} {:<6} {:<8}", "Address", "Value", "Hex");
-        println!("{:─<8} {:─<6} {:─<8}", "", "", "");
+        print_table_header(&["Address", "Value", "Hex"]);
     } else {
-        println!("{:<8} {:<6}", "Address", "Value");
-        println!("{:─<8} {:─<6}", "", "");
+        print_table_header(&["Address", "Value"]);
     }
 
     // Print data rows
@@ -398,9 +419,8 @@ fn print_coil_table(coils: &[bool], start_addr: u16) {
         return;
     }
 
-    // Print header
-    println!("{:<8} {:<6}", "Address", "Value");
-    println!("{:─<8} {:─<6}", "", "");
+    // Use helper for header
+    print_table_header(&["Address", "Value"]);
 
     // Print data rows
     for (i, &value) in coils.iter().enumerate() {
