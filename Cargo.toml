@@ -1,7 +1,7 @@
 [package]
 name = "mb-cli"
 version = "1.0.0"
-edition = "2024"
+edition = "2021"
 authors = ["Warren Krettek <warrenkrettek@gmail.com>"]
 description = "A blazing fast, reliable Modbus TCP and RTU client and server command-line tool"
 readme = "README.md"
