@@ -385,6 +385,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mb-cli"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "tokio",
+ "tokio-modbus",
+ "tokio-serial",
+ "tokio-test",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -422,18 +434,6 @@ dependencies = [
  "nix 0.29.0",
  "serialport",
  "winapi",
-]
-
-[[package]]
-name = "modbus_client"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "tokio",
- "tokio-modbus",
- "tokio-serial",
- "tokio-test",
 ]
 
 [[package]]

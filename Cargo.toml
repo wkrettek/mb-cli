@@ -1,7 +1,19 @@
 [package]
-name = "modbus_client"
-version = "0.1.0"
+name = "mb-cli"
+version = "1.0.0"
 edition = "2024"
+authors = ["Warren Krettek <warrenkrettek@gmail.com>"]
+description = "A blazing fast, reliable Modbus TCP and RTU client and server command-line tool"
+readme = "README.md"
+homepage = "https://github.com/wkrettek/mb-cli"
+repository = "https://github.com/wkrettek/mb-cli"
+license = "MIT OR Apache-2.0"
+keywords = ["modbus", "tcp", "rtu", "industrial", "iot", "automation"]
+categories = ["command-line-utilities", "network-programming"]
+exclude = [
+    "target/",
+    "AGENTS.md"
+]
 
 [[bin]]
 name = "mb-cli"

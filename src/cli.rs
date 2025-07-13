@@ -53,13 +53,13 @@ pub struct Common {
     #[arg(long, default_value_t = 0, display_order = 5)]
     pub unit: u8,
 
-    /// Verbose output
-    #[arg(long, short, display_order = 6)]
-    pub verbose: bool,
-
     /// Timeout for connections and operations in seconds
     #[arg(long, default_value_t = 5, display_order = 7)]
     pub timeout: u64,
+
+    /// Verbose output
+    #[arg(long, short, display_order = 9)]
+    pub verbose: bool,
 }
 
 /// CLI entry point
@@ -92,43 +92,43 @@ pub enum Command {
     /// Run a Modbus server
     Server {
         /// IP address to bind to (TCP only)
-        #[arg(long, value_parser = clap::value_parser!(IpAddr), conflicts_with = "device")]
+        #[arg(long, value_parser = clap::value_parser!(IpAddr), conflicts_with = "device", display_order = 1)]
         ip: Option<IpAddr>,
 
-        /// Serial device path (RTU only)
-        #[arg(long, conflicts_with = "ip")]
-        device: Option<PathBuf>,
-
         /// Port to listen on (TCP only)
-        #[arg(long, default_value_t = 502)]
+        #[arg(long, default_value_t = 502, display_order = 2)]
         port: u16,
 
+        /// Serial device path (RTU only)
+        #[arg(long, conflicts_with = "ip", display_order = 3)]
+        device: Option<PathBuf>,
+
         /// Baud rate for serial communication (RTU only)
-        #[arg(long, default_value_t = 9600)]
+        #[arg(long, default_value_t = 9600, display_order = 4)]
         baud: u32,
 
         /// Unit/Slave ID
-        #[arg(long, default_value_t = 1)]
+        #[arg(long, default_value_t = 1, display_order = 5)]
         unit: u8,
 
         /// Number of coils (0-65535)
-        #[arg(long, default_value_t = 10000)]
+        #[arg(long, default_value_t = 10000, display_order = 6)]
         num_coils: u16,
 
         /// Number of discrete inputs (0-65535)
-        #[arg(long, default_value_t = 10000)]
+        #[arg(long, default_value_t = 10000, display_order = 7)]
         num_discrete: u16,
 
         /// Number of holding registers (0-65535)
-        #[arg(long, default_value_t = 10000)]
+        #[arg(long, default_value_t = 10000, display_order = 8)]
         num_holding: u16,
 
         /// Number of input registers (0-65535)
-        #[arg(long, default_value_t = 10000)]
+        #[arg(long, default_value_t = 10000, display_order = 9)]
         num_input: u16,
 
         /// Verbose logging
-        #[arg(long)]
+        #[arg(long, display_order = 10)]
         verbose: bool,
     },
 }
@@ -141,7 +141,7 @@ pub enum ReadArea {
         #[arg(long = "addr", value_name = "ADDRESS")]
         start: u16,
         /// Quantity (default 1, max 2000)
-        #[arg(long = "qty", default_value_t = 1, value_parser = validate_coil_qty, display_order = 8)]
+        #[arg(long = "qty", default_value_t = 1, value_parser = validate_coil_qty, display_order = 6)]
         qty: u16,
         #[command(flatten)]
         common: Common,
@@ -152,7 +152,7 @@ pub enum ReadArea {
         #[arg(long = "addr", value_name = "ADDRESS")]
         start: u16,
         /// Quantity (default 1, max 2000)
-        #[arg(long = "qty", default_value_t = 1, value_parser = validate_coil_qty, display_order = 8)]
+        #[arg(long = "qty", default_value_t = 1, value_parser = validate_coil_qty, display_order = 6)]
         qty: u16,
         #[command(flatten)]
         common: Common,
@@ -163,7 +163,7 @@ pub enum ReadArea {
         #[arg(long = "addr", value_name = "ADDRESS")]
         start: u16,
         /// Quantity (default 1, max 125)
-        #[arg(long = "qty", default_value_t = 1, value_parser = validate_register_qty, display_order = 8)]
+        #[arg(long = "qty", default_value_t = 1, value_parser = validate_register_qty, display_order = 6)]
         qty: u16,
         #[command(flatten)]
         common: Common,
@@ -174,7 +174,7 @@ pub enum ReadArea {
         #[arg(long = "addr", value_name = "ADDRESS")]
         start: u16,
         /// Quantity (default 1, max 125)
-        #[arg(long = "qty", default_value_t = 1, value_parser = validate_register_qty, display_order = 8)]
+        #[arg(long = "qty", default_value_t = 1, value_parser = validate_register_qty, display_order = 6)]
         qty: u16,
         #[command(flatten)]
         common: Common,
