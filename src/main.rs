@@ -168,6 +168,9 @@ async fn main() -> anyhow::Result<()> {
             device,
             port,
             baud,
+            parity,
+            stop_bits,
+            data_bits,
             unit: _,
             num_coils,
             num_discrete,
@@ -222,7 +225,8 @@ async fn main() -> anyhow::Result<()> {
                     // RTU Server
                     println!("Starting Modbus RTU server on {}", device_path.display());
                     print_config();
-                    run_rtu_server(&device_path, baud, data).await?;
+                    run_rtu_server(&device_path, baud, &parity, &stop_bits, &data_bits, data)
+                        .await?;
                 }
                 (None, None) => {
                     // Default to TCP on 0.0.0.0:502

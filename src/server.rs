@@ -1,3 +1,4 @@
+use crate::cli::{DataBits, Parity, StopBits};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio_modbus::prelude::*;
@@ -195,12 +196,23 @@ pub async fn run_tcp_server(
 pub async fn run_rtu_server(
     device_path: &std::path::Path,
     baud: u32,
+    parity: &Parity,
+    stop_bits: &StopBits,
+    data_bits: &DataBits,
     data: Arc<tokio::sync::RwLock<ModbusData>>,
 ) -> anyhow::Result<()> {
-    println!("Using baud rate: {baud}");
+    println!("Serial Configuration:");
+    println!("  Baud Rate: {baud}");
+    println!("  Parity: {:?}", parity);
+    println!("  Stop Bits: {:?}", stop_bits);
+    println!("  Data Bits: {:?}", data_bits);
 
-    match tokio_serial::SerialStream::open(&tokio_serial::new(device_path.to_string_lossy(), baud))
-    {
+    let builder = tokio_serial::new(device_path.to_string_lossy(), baud)
+        .parity((*parity).into())
+        .stop_bits((*stop_bits).into())
+        .data_bits((*data_bits).into());
+
+    match tokio_serial::SerialStream::open(&builder) {
         Ok(mut serial) => {
             // Disable exclusive access for virtual ports
             if let Err(e) = serial.set_exclusive(false) {

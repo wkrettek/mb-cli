@@ -47,19 +47,23 @@ pub async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Contex
             // RTU connection
             if common.verbose {
                 println!(
-                    "Connecting to Modbus RTU device at {} (Baud: {}, Unit ID: {})...",
+                    "Connecting to Modbus RTU device at {} (Baud: {}, Parity: {:?}, Stop Bits: {:?}, Data Bits: {:?}, Unit ID: {})...",
                     device.display(),
                     common.baud,
+                    common.parity,
+                    common.stop_bits,
+                    common.data_bits,
                     common.unit
                 );
             }
 
             let connect_timeout = Duration::from_secs(common.timeout);
             match timeout(connect_timeout, async {
-                tokio_serial::SerialStream::open(&tokio_serial::new(
-                    device.to_string_lossy(),
-                    common.baud,
-                ))
+                let builder = tokio_serial::new(device.to_string_lossy(), common.baud)
+                    .parity(common.parity.into())
+                    .stop_bits(common.stop_bits.into())
+                    .data_bits(common.data_bits.into());
+                tokio_serial::SerialStream::open(&builder)
             })
             .await
             {

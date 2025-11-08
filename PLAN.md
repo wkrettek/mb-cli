@@ -30,10 +30,10 @@
 - [x] **Async-safe Mutex**: Replace `std::sync::Mutex` with `tokio::sync::RwLock` to prevent blocking async runtime
 - [x] **Coil value parsing**: ~~Change from accepting any `u16` to proper `bool` parsing~~ (Won't do - being permissive is better)
 
-## Usability Improvements: Medium Priority  
+## Usability Improvements: Medium Priority
 - [x] **Range validation**: Add Clap range validation for qty (coils: 1-2000, registers: 1-125) with detailed Modbus spec error messages
 - [x] **Verbose server logging**: ~~Gate server read/write logs behind `--verbose` flag~~ (Won't do - current output is fine)
-- [ ] **Serial port options**: Add optional `--parity`, `--stop-bits`, `--data-bits` flags for RS-485 compatibility
+- [x] **Serial port options**: Add optional `--parity`, `--stop-bits`, `--data-bits` flags for RS-485 compatibility
 
 ## Polish Improvements: Low Priority
 - [x] **Table helper DRY**: Extract common header logic from print_register_table and print_coil_table
