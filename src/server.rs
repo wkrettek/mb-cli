@@ -1,7 +1,7 @@
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio_modbus::prelude::*;
-use tokio_modbus::server::{Service, rtu, tcp::Server};
+use tokio_modbus::server::{rtu, tcp::Server, Service};
 
 #[derive(Debug)]
 pub struct ModbusData {
@@ -337,7 +337,7 @@ mod tests {
         if let Ok(Response::ReadHoldingRegisters(registers)) = result {
             assert_eq!(registers.len(), 3);
             assert_eq!(registers[0], 5); // address 5 = value 5
-            assert_eq!(registers[1], 6); // address 6 = value 6  
+            assert_eq!(registers[1], 6); // address 6 = value 6
             assert_eq!(registers[2], 7); // address 7 = value 7
         } else {
             panic!("Expected ReadHoldingRegisters response");
