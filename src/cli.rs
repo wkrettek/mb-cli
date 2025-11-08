@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use std::{net::IpAddr, path::PathBuf};
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Parity {
     None,
     Even,
@@ -18,7 +18,7 @@ impl From<Parity> for tokio_serial::Parity {
     }
 }
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum StopBits {
     #[value(name = "1")]
     One,
@@ -35,7 +35,7 @@ impl From<StopBits> for tokio_serial::StopBits {
     }
 }
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum DataBits {
     #[value(name = "5")]
     Five,

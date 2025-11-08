@@ -208,9 +208,9 @@ pub async fn run_rtu_server(
     println!("  Data Bits: {:?}", data_bits);
 
     let builder = tokio_serial::new(device_path.to_string_lossy(), baud)
-        .parity(parity.clone().into())
-        .stop_bits(stop_bits.clone().into())
-        .data_bits(data_bits.clone().into());
+        .parity((*parity).into())
+        .stop_bits((*stop_bits).into())
+        .data_bits((*data_bits).into());
 
     match tokio_serial::SerialStream::open(&builder) {
         Ok(mut serial) => {

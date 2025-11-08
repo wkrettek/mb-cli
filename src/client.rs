@@ -60,9 +60,9 @@ pub async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Contex
             let connect_timeout = Duration::from_secs(common.timeout);
             match timeout(connect_timeout, async {
                 let builder = tokio_serial::new(device.to_string_lossy(), common.baud)
-                    .parity(common.parity.clone().into())
-                    .stop_bits(common.stop_bits.clone().into())
-                    .data_bits(common.data_bits.clone().into());
+                    .parity(common.parity.into())
+                    .stop_bits(common.stop_bits.into())
+                    .data_bits(common.data_bits.into());
                 tokio_serial::SerialStream::open(&builder)
             })
             .await
