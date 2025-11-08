@@ -4,31 +4,6 @@ use std::sync::Arc;
 use tokio_modbus::prelude::*;
 use tokio_modbus::server::{Service, rtu, tcp::Server};
 
-// Convert CLI enums to tokio_serial types
-fn convert_parity(parity: &Parity) -> tokio_serial::Parity {
-    match parity {
-        Parity::None => tokio_serial::Parity::None,
-        Parity::Even => tokio_serial::Parity::Even,
-        Parity::Odd => tokio_serial::Parity::Odd,
-    }
-}
-
-fn convert_stop_bits(stop_bits: &StopBits) -> tokio_serial::StopBits {
-    match stop_bits {
-        StopBits::One => tokio_serial::StopBits::One,
-        StopBits::Two => tokio_serial::StopBits::Two,
-    }
-}
-
-fn convert_data_bits(data_bits: &DataBits) -> tokio_serial::DataBits {
-    match data_bits {
-        DataBits::Five => tokio_serial::DataBits::Five,
-        DataBits::Six => tokio_serial::DataBits::Six,
-        DataBits::Seven => tokio_serial::DataBits::Seven,
-        DataBits::Eight => tokio_serial::DataBits::Eight,
-    }
-}
-
 #[derive(Debug)]
 pub struct ModbusData {
     pub coils: Vec<bool>,
@@ -233,9 +208,9 @@ pub async fn run_rtu_server(
     println!("  Data Bits: {:?}", data_bits);
 
     let builder = tokio_serial::new(device_path.to_string_lossy(), baud)
-        .parity(convert_parity(parity))
-        .stop_bits(convert_stop_bits(stop_bits))
-        .data_bits(convert_data_bits(data_bits));
+        .parity(parity.clone().into())
+        .stop_bits(stop_bits.clone().into())
+        .data_bits(data_bits.clone().into());
 
     match tokio_serial::SerialStream::open(&builder)
     {
