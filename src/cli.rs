@@ -1,5 +1,32 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::{net::IpAddr, path::PathBuf};
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum Parity {
+    None,
+    Even,
+    Odd,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum StopBits {
+    #[value(name = "1")]
+    One,
+    #[value(name = "2")]
+    Two,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum DataBits {
+    #[value(name = "5")]
+    Five,
+    #[value(name = "6")]
+    Six,
+    #[value(name = "7")]
+    Seven,
+    #[value(name = "8")]
+    Eight,
+}
 
 // Custom validation functions for Modbus specification limits
 fn validate_coil_qty(s: &str) -> Result<u16, String> {
@@ -49,16 +76,28 @@ pub struct Common {
     #[arg(long, default_value_t = 9600, display_order = 4)]
     pub baud: u32,
 
+    /// Parity for serial communication (RTU only)
+    #[arg(long, value_enum, default_value = "none", display_order = 5)]
+    pub parity: Parity,
+
+    /// Stop bits for serial communication (RTU only)
+    #[arg(long, value_enum, default_value = "1", display_order = 6)]
+    pub stop_bits: StopBits,
+
+    /// Data bits for serial communication (RTU only)
+    #[arg(long, value_enum, default_value = "8", display_order = 7)]
+    pub data_bits: DataBits,
+
     /// Modbus slave / unit ID
-    #[arg(long, default_value_t = 0, display_order = 5)]
+    #[arg(long, default_value_t = 0, display_order = 8)]
     pub unit: u8,
 
     /// Timeout for connections and operations in seconds
-    #[arg(long, default_value_t = 5, display_order = 7)]
+    #[arg(long, default_value_t = 5, display_order = 9)]
     pub timeout: u64,
 
     /// Verbose output
-    #[arg(long, short, display_order = 9)]
+    #[arg(long, short, display_order = 10)]
     pub verbose: bool,
 }
 
@@ -107,28 +146,40 @@ pub enum Command {
         #[arg(long, default_value_t = 9600, display_order = 4)]
         baud: u32,
 
+        /// Parity for serial communication (RTU only)
+        #[arg(long, value_enum, default_value = "none", display_order = 5)]
+        parity: Parity,
+
+        /// Stop bits for serial communication (RTU only)
+        #[arg(long, value_enum, default_value = "1", display_order = 6)]
+        stop_bits: StopBits,
+
+        /// Data bits for serial communication (RTU only)
+        #[arg(long, value_enum, default_value = "8", display_order = 7)]
+        data_bits: DataBits,
+
         /// Unit/Slave ID
-        #[arg(long, default_value_t = 1, display_order = 5)]
+        #[arg(long, default_value_t = 1, display_order = 8)]
         unit: u8,
 
         /// Number of coils (0-65535)
-        #[arg(long, default_value_t = 10000, display_order = 6)]
+        #[arg(long, default_value_t = 10000, display_order = 9)]
         num_coils: u16,
 
         /// Number of discrete inputs (0-65535)
-        #[arg(long, default_value_t = 10000, display_order = 7)]
+        #[arg(long, default_value_t = 10000, display_order = 10)]
         num_discrete: u16,
 
         /// Number of holding registers (0-65535)
-        #[arg(long, default_value_t = 10000, display_order = 8)]
+        #[arg(long, default_value_t = 10000, display_order = 11)]
         num_holding: u16,
 
         /// Number of input registers (0-65535)
-        #[arg(long, default_value_t = 10000, display_order = 9)]
+        #[arg(long, default_value_t = 10000, display_order = 12)]
         num_input: u16,
 
         /// Verbose logging
-        #[arg(long, display_order = 10)]
+        #[arg(long, display_order = 13)]
         verbose: bool,
     },
 }

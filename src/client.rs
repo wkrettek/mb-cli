@@ -1,8 +1,33 @@
-use crate::cli::Common;
+use crate::cli::{Common, DataBits, Parity, StopBits};
 use std::net::SocketAddr;
 use tokio::time::{Duration, timeout};
 use tokio_modbus::client;
 use tokio_modbus::prelude::*;
+
+// Convert CLI enums to tokio_serial types
+fn convert_parity(parity: &Parity) -> tokio_serial::Parity {
+    match parity {
+        Parity::None => tokio_serial::Parity::None,
+        Parity::Even => tokio_serial::Parity::Even,
+        Parity::Odd => tokio_serial::Parity::Odd,
+    }
+}
+
+fn convert_stop_bits(stop_bits: &StopBits) -> tokio_serial::StopBits {
+    match stop_bits {
+        StopBits::One => tokio_serial::StopBits::One,
+        StopBits::Two => tokio_serial::StopBits::Two,
+    }
+}
+
+fn convert_data_bits(data_bits: &DataBits) -> tokio_serial::DataBits {
+    match data_bits {
+        DataBits::Five => tokio_serial::DataBits::Five,
+        DataBits::Six => tokio_serial::DataBits::Six,
+        DataBits::Seven => tokio_serial::DataBits::Seven,
+        DataBits::Eight => tokio_serial::DataBits::Eight,
+    }
+}
 
 pub async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Context> {
     match (&common.ip, &common.device) {
@@ -47,19 +72,23 @@ pub async fn connect_to_modbus(common: &Common) -> anyhow::Result<client::Contex
             // RTU connection
             if common.verbose {
                 println!(
-                    "Connecting to Modbus RTU device at {} (Baud: {}, Unit ID: {})...",
+                    "Connecting to Modbus RTU device at {} (Baud: {}, Parity: {:?}, Stop Bits: {:?}, Data Bits: {:?}, Unit ID: {})...",
                     device.display(),
                     common.baud,
+                    common.parity,
+                    common.stop_bits,
+                    common.data_bits,
                     common.unit
                 );
             }
 
             let connect_timeout = Duration::from_secs(common.timeout);
             match timeout(connect_timeout, async {
-                tokio_serial::SerialStream::open(&tokio_serial::new(
-                    device.to_string_lossy(),
-                    common.baud,
-                ))
+                let builder = tokio_serial::new(device.to_string_lossy(), common.baud)
+                    .parity(convert_parity(&common.parity))
+                    .stop_bits(convert_stop_bits(&common.stop_bits))
+                    .data_bits(convert_data_bits(&common.data_bits));
+                tokio_serial::SerialStream::open(&builder)
             })
             .await
             {
