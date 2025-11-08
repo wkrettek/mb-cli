@@ -2,7 +2,7 @@ use crate::cli::{DataBits, Parity, StopBits};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio_modbus::prelude::*;
-use tokio_modbus::server::{Service, rtu, tcp::Server};
+use tokio_modbus::server::{rtu, tcp::Server, Service};
 
 #[derive(Debug)]
 pub struct ModbusData {
@@ -212,8 +212,7 @@ pub async fn run_rtu_server(
         .stop_bits(stop_bits.clone().into())
         .data_bits(data_bits.clone().into());
 
-    match tokio_serial::SerialStream::open(&builder)
-    {
+    match tokio_serial::SerialStream::open(&builder) {
         Ok(mut serial) => {
             // Disable exclusive access for virtual ports
             if let Err(e) = serial.set_exclusive(false) {
@@ -350,7 +349,7 @@ mod tests {
         if let Ok(Response::ReadHoldingRegisters(registers)) = result {
             assert_eq!(registers.len(), 3);
             assert_eq!(registers[0], 5); // address 5 = value 5
-            assert_eq!(registers[1], 6); // address 6 = value 6  
+            assert_eq!(registers[1], 6); // address 6 = value 6
             assert_eq!(registers[2], 7); // address 7 = value 7
         } else {
             panic!("Expected ReadHoldingRegisters response");

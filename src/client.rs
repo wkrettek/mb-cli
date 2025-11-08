@@ -1,6 +1,6 @@
 use crate::cli::Common;
 use std::net::SocketAddr;
-use tokio::time::{Duration, timeout};
+use tokio::time::{timeout, Duration};
 use tokio_modbus::client;
 use tokio_modbus::prelude::*;
 
@@ -208,12 +208,10 @@ mod tests {
 
         let timeout_result = handle_modbus_response_with_timeout(result, "test operation", 5).await;
         assert!(timeout_result.is_err());
-        assert!(
-            timeout_result
-                .unwrap_err()
-                .to_string()
-                .contains("Operation timeout")
-        );
+        assert!(timeout_result
+            .unwrap_err()
+            .to_string()
+            .contains("Operation timeout"));
     }
 
     #[test]
@@ -230,12 +228,10 @@ mod tests {
             let result =
                 handle_modbus_response_with_timeout(modbus_error_result, "test operation", 5).await;
             assert!(result.is_err());
-            assert!(
-                result
-                    .unwrap_err()
-                    .to_string()
-                    .contains("connection failed")
-            );
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("connection failed"));
         });
     }
 
