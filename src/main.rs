@@ -8,7 +8,7 @@ mod table;
 
 use cli::{Cli, Command, ReadArea, WriteArea};
 use client::{connect_to_modbus, modbus_operation_with_timeout};
-use server::{ModbusData, run_rtu_server, run_tcp_server};
+use server::{run_rtu_server, run_tcp_server, ModbusData};
 use table::{print_coil_table, print_register_table};
 
 use clap::Parser;
